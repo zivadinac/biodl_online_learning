@@ -12,6 +12,7 @@ connectivity, so at one neuron per type they are simply absent.
 from __future__ import annotations
 
 import nest
+import numpy as np
 
 from biodl.config import synapse_config
 from biodl.nest_setup import NEURON_MODEL, SYNAPSE_MODEL, install_dynaple
@@ -173,17 +174,62 @@ class Microcircuit:
     def drive(
         self, input_rate: float = 0.0, teacher_rate: float = 0.0, cue_rate: float = 0.0
     ) -> "Microcircuit":
-        """Attach the three external Poisson drives: input, teacher, attention cue."""
-        rates = {"input": input_rate, "teacher": teacher_rate, "cue": cue_rate}
-        for name, rate in rates.items():
+        """Attach the three external drives as *constant-rate* Poisson processes."""
+        for name, rate in (("input", input_rate), ("teacher", teacher_rate), ("cue", cue_rate)):
             self.gen[name] = nest.Create("poisson_generator", 1, {"rate": float(rate)})
+        self._connect_drives()
+        return self
 
+    def drive_profiles(self, times, input=None, teacher=None, cue=None) -> "Microcircuit":
+        """Attach the three drives as *time-varying* Poisson processes.
+
+        ``times`` is a 1-D vector of times (ms) at which each rate takes effect
+        (piecewise-constant: value ``i`` holds from ``times[i]`` until ``times[i+1]``).
+        Each of ``input`` / ``teacher`` / ``cue`` is, independently:
+
+        * a 1-D rate vector (Hz), same length as ``times`` — time-varying drive;
+        * a scalar — constant rate;
+        * a callable ``rate(t_ms) -> Hz`` — sampled at ``times``;
+        * ``None`` — silent.
+        """
+        times = np.atleast_1d(np.asarray(times, dtype=float))
+        for name, profile in (("input", input), ("teacher", teacher), ("cue", cue)):
+            self.gen[name] = self._poisson_from_profile(times, profile)
+        self._connect_drives()
+        return self
+
+    def _poisson_from_profile(self, times: np.ndarray, profile) -> "nest.NodeCollection":
+        if profile is None:
+            return nest.Create("poisson_generator", 1, {"rate": 0.0})
+        if callable(profile):
+            values = np.asarray([float(profile(t)) for t in times], dtype=float)
+        elif np.isscalar(profile):
+            return nest.Create("poisson_generator", 1, {"rate": float(profile)})
+        else:
+            values = np.asarray(profile, dtype=float)
+        if values.shape != times.shape:
+            raise ValueError(
+                f"rate vector length {values.shape} != times length {times.shape}"
+            )
+        # inhomogeneous_poisson_generator needs strictly-increasing rate_times on
+        # the simulation grid and > 0; nudge the first point off 0 if needed.
+        res = nest.GetKernelStatus("resolution")
+        rt = np.round(times / res) * res
+        rt[0] = max(rt[0], res)
+        for i in range(1, len(rt)):  # enforce strictly increasing on the grid
+            if rt[i] <= rt[i - 1]:
+                rt[i] = rt[i - 1] + res
+        return nest.Create(
+            "inhomogeneous_poisson_generator", 1,
+            {"rate_times": rt.tolist(), "rate_values": values.tolist()},
+        )
+
+    def _connect_drives(self) -> None:
         for src, dst, edge, receptor, _sign in DRIVE_EDGES:
             model = _PLASTIC if (edge == "input_pyr" and self.plastic_input) else _STATIC
             nest.Connect(
                 self.gen[src], self.pop[dst], "all_to_all", self._syn(edge, receptor, model=model)
             )
-        return self
 
     # -- recording --------------------------------------------------------
     def attach_recorders(self, record_from: list | None = None) -> "Microcircuit":
