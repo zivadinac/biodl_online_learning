@@ -1,0 +1,14 @@
+{
+  "python.analysis.typeCheckingMode": "off",
+  "python.analysis.diagnosticMode": "openFilesOnly",
+  "python.analysis.diagnosticSeverityOverrides": {
+    "reportMissingImports": "none",
+    "reportMissingModuleSource": "none",
+    "reportAttributeAccessIssue": "none",
+    "reportIndexIssue": "none",
+    "reportArgumentType": "none",
+    "reportCallIssue": "none",
+    "reportOptionalSubscript": "none",
+    "reportGeneralTypeIssues": "none"
+  }
+}

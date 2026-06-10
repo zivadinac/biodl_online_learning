@@ -1,0 +1,82 @@
+
+
+save_name: 'overlapping_dynamics'
+#module_name: "dynapse_curr"
+#neuron_name: "dynapse_curr"
+module_name : "delta"
+neuron_name : "alive_neur__with_delta_syn"
+synapse_name: "delta_syn__with_alive_neur"
+
+dt: 0.1 # time step in simulation
+plastic: True 
+n_threads: 36
+# network parameter
+variability: True 
+distribution: 'uniform'
+var: 0.
+syn_dist: 'normal' # none, uniform, normal
+randomize: False #True
+pause_interval: False #True
+
+net:
+
+  # number of neurons 
+  n_inp: 15 # total number of input neurons
+  n_ctx: 4  # total number of teacher neurons
+  n_pyr: 32
+  n_sst: 4
+  n_pvc: 8
+  n_vip: 2
+  
+  inp_H: 20  # (Hz) input poissonian spike train H rate
+  inp_L: 0. #5. #10    # (Hz) input poissonian spike train L rate
+  ctx_H: 500 #500 # (Hz) teacher poissonian spike train H rate
+  ctx_L: 100 #70 #200  # (Hz) teacher poissonian spike train L rate
+  ctx_L_test: 30 #0.2  # (Hz) teacher poissonian spike train L rate
+
+  std_syn: 0.00000001
+ 
+  w_inp_pyr: 0.3 # initial platic weights input
+  w_inp_pvc: 1. # initial platic weights input
+  w_ctx_pyr: 0.
+  w_ctx_pyr_H: 4
+  w_ctx_vip: 0.3 
+
+  w_vip_sst: 2. 
+  w_sst_vip: 0.
+  w_sst_pyr: 1.5
+  w_pyr_sst: 0.3 
+
+  w_pvc_pyr: 0.01 #0.01 
+  w_pvc_pvc: 0.1 
+  w_pyr_pvc: 0.4 
+  w_pyr_pyr: 0.015 #0.01
+
+sim:
+  t_sim: 500 # ms simulation time
+  n_train_iter: 3 #5 #10 
+  n_test_iter: 3 # 5 #5 
+  gr_list: ['A', 'B']
+  gr_color: {'ctxA': '#1E8449', 'ctxB': '#43006E', 'ctx': 'purple', 
+             'inpA': '#1E8449', 'inpB': '#43006E', 'inp': '#43006E', 
+             'pyrA': '#C0392B', 'pyrB': '#7B241C', 
+             'pvc': '#2874A6', 'vip': '#5DADE2', 'sst': '#154360',
+             'weights_A': 'black', 'weights_B': 'red'} 
+  inp_overlap: 5
+  pyr_overlap: 0
+
+  #core_inp: '0' # total number of input neurons
+  #core_ctx: '0' # total number of teacher neurons
+  core_pyr: '1'
+  core_inp: '0'
+  core_sst: '3'
+  core_pvc: '2'
+  core_vip: '2'
+
+plot:
+  feature_to_plot: [['ctxA', 'ctxB'], ['neur_apical_pyrA', 'neur_basal_pyrA'], 
+                    ['pyrA', 'pyrB'], ['pvc', 'vip', 'sst'],
+                    ['neur_ca_pyrA', 'neur_ca_pyrB'],
+                    ['neur_sigma_pls_pyrA', 'neur_sigma_pls_pyrB'],
+                    ['neur_sigma_mns_pyrA', 'neur_sigma_mns_pyrB']] 
+

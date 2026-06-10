@@ -1,0 +1,18 @@
+[project]
+name = "workshop"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "dynaple-model-nest",
+    "snntorch>=0.9.4",
+]
+
+[tool.uv.sources]
+dynaple-model-nest = { path = "../dynaple-model-nest", editable = true }
+
+[tool.uv.workspace]
+members = [
+    "dynaple-model-nest",
+]
