@@ -129,15 +129,26 @@ def main() -> None:
     inh(ax, (SST_P[0] - R, SST_P[1]), (0.08, 0.95), SST_C)                    # SST -| PYR apical (gate)
     _check(g, "pv", "pyr")
     inh(ax, (PV_P[0] - R, PV_P[1]), (0.55, -1.05), PV_C, rad=0.15)            # PV -| PYR
-    _check(g, "pv", "pv")
-    inh(ax, (PV_P[0] + 0.15, PV_P[1] + R - 0.05), (PV_P[0] + R - 0.02, PV_P[1] + 0.18),
-        PV_C, lw=2.0, rad=-2.8, ball=0.09)                                    # PV -| PV (self)
-
     # --- excitatory PYR projections (grey arrowheads) ---
     _check(g, "pyr", "sst")
     exc(ax, (0.6, -0.6), (SST_P[0] - R - 0.05, SST_P[1] - 0.25), rad=-0.35)   # PYR -> SST
     _check(g, "pyr", "pv")
     exc(ax, (0.7, -1.15), (PV_P[0] - R - 0.05, PV_P[1] - 0.05), rad=-0.25)    # PYR -> PV
+
+    # --- recurrent self-coupling (in RECURRENT_EDGES; instantiated only at N>=2) ---
+    # drawn dashed to mark that the 1-neuron column has no autapse.
+    _check(g, "pv", "pv")
+    ax.annotate("", xy=(PV_P[0] + R - 0.02, PV_P[1] + 0.18),
+                xytext=(PV_P[0] + 0.12, PV_P[1] + R - 0.04),
+                arrowprops=dict(arrowstyle="-", color=PV_C, lw=1.8, ls=(0, (3, 2)),
+                                connectionstyle="arc3,rad=-2.8"))
+    ax.add_patch(Circle((PV_P[0] + R - 0.02, PV_P[1] + 0.18), 0.09, color=PV_C, zorder=6))
+    _check(g, "pyr", "pyr")
+    ax.annotate("", xy=(-0.62, -0.62), xytext=(-0.5, -1.08),
+                arrowprops=dict(arrowstyle="-|>", color=EXC_GREY, lw=1.8, mutation_scale=14,
+                                ls=(0, (3, 2)), connectionstyle="arc3,rad=-1.5"))
+    ax.text(-1.7, 0.4, "dashed = recurrent\nself-coupling (N≥2)",
+            fontsize=8.5, color="#777", style="italic", ha="left", va="center")
 
     # legend
     from matplotlib.lines import Line2D

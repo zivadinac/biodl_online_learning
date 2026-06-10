@@ -38,17 +38,17 @@ PORT = {
 # port is ~10x more potent than the basal ports, hence its smaller Ibias.
 # biodl/weights.py will formalise the float-config -> (w, Ibias) mapping.
 DEFAULT_WEIGHTS = {
-    "input_pyr": (10, 1500),   # bottom-up input -> PYR basal (NMDA, plastic in C)
-    "input_pv": (10, 1500),    # bottom-up input -> PV
-    "teacher_pyr": (6, 200),   # top-down teacher -> PYR apical (AMPA, potent)
-    "cue_vip": (15, 2000),     # attention cue -> VIP
-    "pyr_pv": (12, 1500),      # PYR -> PV
-    "pyr_sst": (12, 1500),     # PYR -> SST
-    "pv_pyr": (10, 1500),      # PV -| PYR (GABA_A on basal)
-    "sst_pyr": (12, 2000),     # SST -| PYR apical (the gate, GABA_B)
-    "vip_sst": (15, 2500),     # VIP -| SST (disinhibition, GABA_B)
-    "pyr_pyr": (6, 1000),      # recurrent excitation (size>=2)
-    "pv_pv": (6, 1000),        # recurrent inhibition (size>=2)
+    "input_pyr": (10, 1500),  # bottom-up input -> PYR basal (NMDA, plastic in C)
+    "input_pv": (10, 1500),  # bottom-up input -> PV
+    "teacher_pyr": (6, 200),  # top-down teacher -> PYR apical (AMPA, potent)
+    "cue_vip": (15, 2000),  # attention cue -> VIP
+    "pyr_pv": (12, 1500),  # PYR -> PV
+    "pyr_sst": (12, 1500),  # PYR -> SST
+    "pv_pyr": (10, 1500),  # PV -| PYR (GABA_A on basal)
+    "sst_pyr": (12, 2000),  # SST -| PYR apical (the gate, GABA_B)
+    "vip_sst": (15, 2500),  # VIP -| SST (disinhibition, GABA_B)
+    "pyr_pyr": (6, 1000),  # recurrent excitation (size>=2)
+    "pv_pv": (6, 1000),  # recurrent inhibition (size>=2)
 }
 
 # Canonical-motif edges, the single source of truth for both the builder and the
@@ -58,8 +58,8 @@ MOTIF_EDGES = [
     ("pyr", "pv", "pyr_pv", "ampa_basal", "+"),
     ("pyr", "sst", "pyr_sst", "ampa_basal", "+"),
     ("pv", "pyr", "pv_pyr", "gaba_a_basal", "-"),
-    ("sst", "pyr", "sst_pyr", "gaba_b_apical", "-"),   # the gate
-    ("vip", "sst", "vip_sst", "gaba_b_basal", "-"),    # disinhibition
+    ("sst", "pyr", "sst_pyr", "gaba_b_apical", "-"),  # the gate
+    ("vip", "sst", "vip_sst", "gaba_b_basal", "-"),  # disinhibition
 ]
 
 # Recurrent edges — present only at population size >= 2 (no autapses).
@@ -70,7 +70,7 @@ RECURRENT_EDGES = [
 
 # External Poisson drives: (source, dst, weight_key, receptor, sign).
 DRIVE_EDGES = [
-    ("input", "pyr", "input_pyr", "nmda_basal", "+"),   # plastic in learning expts
+    ("input", "pyr", "input_pyr", "nmda_basal", "+"),  # plastic in learning expts
     ("input", "pv", "input_pv", "ampa_basal", "+"),
     ("teacher", "pyr", "teacher_pyr", "ampa_apical", "+"),
     ("cue", "vip", "cue_vip", "ampa_basal", "+"),
@@ -117,15 +117,24 @@ class Microcircuit:
     def _define_synapses(self) -> None:
         existing = nest.GetKernelStatus("synapse_models")
         if _STATIC not in existing:
-            nest.CopyModel(SYNAPSE_MODEL, _STATIC,
-                           {"plastic": False, "binarize": True, "eta": 0.0, "eta_L": 0.0,
-                            "delay": self.delay})
+            nest.CopyModel(
+                SYNAPSE_MODEL,
+                _STATIC,
+                {"plastic": False, "binarize": True, "eta": 0.0, "eta_L": 0.0, "delay": self.delay},
+            )
         if _PLASTIC not in existing:
             syn = synapse_config()
-            nest.CopyModel(SYNAPSE_MODEL, _PLASTIC,
-                           {"plastic": True, "binarize": bool(syn.get("binarize", True)),
-                            "eta": float(syn.get("eta", 0.0)), "eta_L": float(syn.get("eta_L", 0.0)),
-                            "delay": self.delay})
+            nest.CopyModel(
+                SYNAPSE_MODEL,
+                _PLASTIC,
+                {
+                    "plastic": True,
+                    "binarize": bool(syn.get("binarize", True)),
+                    "eta": float(syn.get("eta", 0.0)),
+                    "eta_L": float(syn.get("eta_L", 0.0)),
+                    "delay": self.delay,
+                },
+            )
 
     def _create_populations(self) -> None:
         for key, n in self.sizes.items():
@@ -153,13 +162,17 @@ class Microcircuit:
         # recurrent, no autapses (only present at population size >= 2)
         for src, dst, edge, receptor, _sign in RECURRENT_EDGES:
             if self.sizes[src] >= 2:
-                nest.Connect(self.pop[src], self.pop[dst],
-                             {"rule": "all_to_all", "allow_autapses": False},
-                             self._syn(edge, receptor))
+                nest.Connect(
+                    self.pop[src],
+                    self.pop[dst],
+                    {"rule": "all_to_all", "allow_autapses": False},
+                    self._syn(edge, receptor),
+                )
 
     # -- external drive ---------------------------------------------------
-    def drive(self, input_rate: float = 0.0, teacher_rate: float = 0.0,
-              cue_rate: float = 0.0) -> "Microcircuit":
+    def drive(
+        self, input_rate: float = 0.0, teacher_rate: float = 0.0, cue_rate: float = 0.0
+    ) -> "Microcircuit":
         """Attach the three external Poisson drives: input, teacher, attention cue."""
         rates = {"input": input_rate, "teacher": teacher_rate, "cue": cue_rate}
         for name, rate in rates.items():
@@ -167,8 +180,9 @@ class Microcircuit:
 
         for src, dst, edge, receptor, _sign in DRIVE_EDGES:
             model = _PLASTIC if (edge == "input_pyr" and self.plastic_input) else _STATIC
-            nest.Connect(self.gen[src], self.pop[dst], "all_to_all",
-                         self._syn(edge, receptor, model=model))
+            nest.Connect(
+                self.gen[src], self.pop[dst], "all_to_all", self._syn(edge, receptor, model=model)
+            )
         return self
 
     # -- recording --------------------------------------------------------
