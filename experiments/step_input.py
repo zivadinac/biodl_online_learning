@@ -24,14 +24,16 @@ import nest  # noqa: E402
 
 nest.set_verbosity("M_ERROR")
 
-T_SIM = 10_000.0   # ms
-DT = 50.0          # ms, rate-profile resolution
-N_TRIALS = 20      # independent Poisson realizations to show
+T_SIM = 10_000.0  # ms
+DT = 5.0  # ms, rate-profile resolution
+N_TRIALS = 100  # independent Poisson realizations to show
 STEP_TIME = 5000.0  # ms, when the rate jumps
-RATE_LOW = 10.0     # Hz before the step (x)
-RATE_HIGH = 20.0    # Hz after the step (y)
+RATE_LOW = 5.0  # Hz before the step (x)
+RATE_HIGH = 50.0  # Hz after the step (y)
 
-FIG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "figures")
+FIG_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "figures"
+)
 
 
 def input_step(times: np.ndarray) -> np.ndarray:
@@ -49,8 +51,11 @@ def main() -> None:
     # rate_times must be strictly > 0 and on the grid; nudge the first point off 0
     rate_times = times.copy()
     rate_times[0] = 0.1
-    gen = nest.Create("inhomogeneous_poisson_generator", 1,
-                      {"rate_times": rate_times.tolist(), "rate_values": rates.tolist()})
+    gen = nest.Create(
+        "inhomogeneous_poisson_generator",
+        1,
+        {"rate_times": rate_times.tolist(), "rate_values": rates.tolist()},
+    )
 
     parrots = nest.Create("parrot_neuron", N_TRIALS)
     nest.Connect(gen, parrots, "all_to_all", {"delay": 0.1})
@@ -70,8 +75,10 @@ def main() -> None:
     ax_rate.plot(times / 1e3, rates, color="#9B1B1B", lw=2, drawstyle="steps-post")
     ax_rate.fill_between(times / 1e3, rates, color="#9B1B1B", alpha=0.12, step="post")
     ax_rate.set_ylabel("input rate (Hz)")
-    ax_rate.set_title(f"Step Poisson input drive: {RATE_LOW:.0f} -> {RATE_HIGH:.0f} Hz "
-                      f"at {STEP_TIME / 1e3:.0f} s")
+    ax_rate.set_title(
+        f"Step Poisson input drive: {RATE_LOW:.0f} -> {RATE_HIGH:.0f} Hz "
+        f"at {STEP_TIME / 1e3:.0f} s"
+    )
     ax_rate.set_ylim(0, RATE_HIGH * 1.2)
 
     ax_spk.plot(spike_t, spike_row, "|", color="#1B3B6F", markersize=7, mew=1.0)

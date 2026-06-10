@@ -29,8 +29,11 @@ The main learning demonstration.
 
 ### Task setup
 
-- Two input patterns, each a binary vector of independent Poisson spike trains. Active
-  entries fire at **50 Hz**, inactive at **5 Hz** (length-N vectors).
+- Two input patterns, each a binary vector of independent Poisson spike trains. The
+  paper describes active/inactive Poisson rates, but Chiara's checked
+  `config_overlapping.yaml` uses inactive input `inp_L: 0.`. In this NEST
+  reproduction, a nonzero inactive background caused false potentiation during teacher
+  phases, so the classifier follows the checked config and uses zero inactive input.
 - The classification network is built by **duplicating** the motif into two identical
   columns, "A" and "B". The only difference between columns is the apical teacher input
   ("Teacher A" vs "Teacher B" in Fig. 2a).

@@ -4,7 +4,9 @@ import os
 
 import yaml
 
-CONFIG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "texts")
+CONFIG_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "texts"
+)
 
 
 def _load(name: str) -> dict:

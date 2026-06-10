@@ -61,6 +61,7 @@ amplitudes = np.linspace(0.0, 1000.0, 40)
 # the firing rate in spikes/s. We reset the kernel each call so runs are
 # independent, then count only the spikes after the transient.
 
+
 def firing_rate(amplitude):
     nest.ResetKernel()
 
@@ -103,8 +104,12 @@ rheobase = (V_th - E_L) / R  # pA
 # ceiling of 500 Hz is far above this range and would otherwise flatten it).
 
 fig, ax = plt.subplots(figsize=(8, 5))
-ax.plot(amplitudes, rates, "o-", color="#1f77b4", lw=1.5, ms=4, label="$I_{inj}$ vs rate")
-ax.axvline(rheobase, color="#d62728", ls="--", lw=1, label=f"rheobase ({rheobase:.0f} pA)")
+ax.plot(
+    amplitudes, rates, "o-", color="#1f77b4", lw=1.5, ms=4, label="$I_{inj}$ vs rate"
+)
+ax.axvline(
+    rheobase, color="#d62728", ls="--", lw=1, label=f"rheobase ({rheobase:.0f} pA)"
+)
 
 ax.set_xlabel("injected current $I_{inj}$ (pA)")
 ax.set_ylabel("firing rate (Hz)")

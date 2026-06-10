@@ -31,7 +31,9 @@ NEGATE = ("Iapical_low",)
 def neuron_params(cell_type: str, cfg: dict | None = None) -> dict:
     """Resolved dynaple_neur parameter dict for one cell type."""
     if cell_type not in CELL_TYPES:
-        raise ValueError(f"unknown cell type {cell_type!r}, expected one of {CELL_TYPES}")
+        raise ValueError(
+            f"unknown cell type {cell_type!r}, expected one of {CELL_TYPES}"
+        )
     cfg = cfg if cfg is not None else neuron_config()
     merged = dict(cfg.get("all", {}))
     merged.update(cfg.get(cell_type, {}))

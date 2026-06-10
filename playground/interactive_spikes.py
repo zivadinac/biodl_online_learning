@@ -52,14 +52,14 @@ from matplotlib.widgets import Slider
 
 nest.set_verbosity("M_WARNING")
 
-T_SIM = 200.0      # ms, total simulation time
-T_START = 20.0     # ms, first input spike
-T_END = 180.0      # ms, last input spike
-T_REF = 2.0        # ms, refractory period
-WEIGHT = 400.0     # pA, synaptic weight of each input spike
-DT = 0.1           # ms, simulation/recording resolution
+T_SIM = 200.0  # ms, total simulation time
+T_START = 20.0  # ms, first input spike
+T_END = 180.0  # ms, last input spike
+T_REF = 2.0  # ms, refractory period
+WEIGHT = 400.0  # pA, synaptic weight of each input spike
+DT = 0.1  # ms, simulation/recording resolution
 
-N_MIN, N_MAX, N_INIT = 0, 200, 20      # input-spikes slider: range and start
+N_MIN, N_MAX, N_INIT = 0, 200, 20  # input-spikes slider: range and start
 TH_MIN, TH_MAX, TH_INIT = -55.0, -40.0, -55.0  # threshold slider (mV)
 
 
@@ -68,6 +68,7 @@ TH_MIN, TH_MAX, TH_INIT = -55.0, -40.0, -55.0  # threshold slider (mV)
 # a firing threshold, and returns the membrane-potential trace, the output spike
 # times, and the input spike times we injected. We reset the kernel each call so
 # runs are independent.
+
 
 def simulate(n_spikes, v_th):
     nest.ResetKernel()
@@ -106,11 +107,21 @@ V_reset = nest.Create("iaf_psc_alpha").get("V_reset")
 
 n_slider = Slider(
     fig.add_axes([0.15, 0.10, 0.7, 0.04]),
-    "input spikes", N_MIN, N_MAX, valinit=N_INIT, valstep=1, color="#1f77b4",
+    "input spikes",
+    N_MIN,
+    N_MAX,
+    valinit=N_INIT,
+    valstep=1,
+    color="#1f77b4",
 )
 th_slider = Slider(
     fig.add_axes([0.15, 0.04, 0.7, 0.04]),
-    "threshold (mV)", TH_MIN, TH_MAX, valinit=TH_INIT, valstep=0.5, color="#d62728",
+    "threshold (mV)",
+    TH_MIN,
+    TH_MAX,
+    valinit=TH_INIT,
+    valstep=0.5,
+    color="#d62728",
 )
 
 
@@ -118,6 +129,7 @@ th_slider = Slider(
 # Fourth, an update function that runs one simulation with the current slider
 # values and (re)draws everything. It clears the main axis each call, which
 # keeps the sliders untouched. Both sliders call it.
+
 
 def update(_=None):
     n_spikes = int(n_slider.val)
@@ -129,11 +141,24 @@ def update(_=None):
     ax.axhline(v_th, color="#d62728", ls="--", lw=1, label=f"V_th ({v_th:.1f} mV)")
 
     # Input spikes: gray ticks along the bottom of the axis.
-    ax.plot(in_spikes, np.full_like(in_spikes, V_reset - 1.0), "|",
-            color="0.5", ms=10, mew=1.2, label=f"input ({len(in_spikes)})")
+    ax.plot(
+        in_spikes,
+        np.full_like(in_spikes, V_reset - 1.0),
+        "|",
+        color="0.5",
+        ms=10,
+        mew=1.2,
+        label=f"input ({len(in_spikes)})",
+    )
     # Output spikes: red dots at threshold.
-    ax.plot(out_spikes, np.full_like(out_spikes, v_th), "o",
-            color="#d62728", ms=6, label=f"output ({len(out_spikes)})")
+    ax.plot(
+        out_spikes,
+        np.full_like(out_spikes, v_th),
+        "o",
+        color="#d62728",
+        ms=6,
+        label=f"output ({len(out_spikes)})",
+    )
 
     ax.set_xlim(0, T_SIM)
     ax.set_ylim(V_reset - 3, TH_MAX + 3)

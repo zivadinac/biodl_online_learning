@@ -29,8 +29,9 @@ import nest
 from biodl.nest_setup import install_dynaple
 
 
-def reset(resolution: float = 0.1, seed: int | None = None,
-          verbosity: str = "M_ERROR") -> None:
+def reset(
+    resolution: float = 0.1, seed: int | None = None, verbosity: str = "M_ERROR"
+) -> None:
     """Reset + configure the NEST kernel and install the dynaple module.
 
     The imperative one-liner equivalent of entering a :class:`Simulation` block.
@@ -50,8 +51,12 @@ def reset(resolution: float = 0.1, seed: int | None = None,
 class Simulation:
     """Context manager that resets and configures the NEST kernel on entry."""
 
-    def __init__(self, resolution: float = 0.1, seed: int | None = None,
-                 verbosity: str = "M_ERROR"):
+    def __init__(
+        self,
+        resolution: float = 0.1,
+        seed: int | None = None,
+        verbosity: str = "M_ERROR",
+    ):
         self.resolution = float(resolution)
         self.seed = seed
         self.verbosity = verbosity

@@ -56,11 +56,11 @@ from matplotlib.widgets import Slider
 
 nest.set_verbosity("M_WARNING")
 
-T_SIM = 300.0   # ms, total simulation time
-WIDTH = 100.0   # ms, fixed width of the current step
-DT = 0.1        # ms, simulation/recording resolution
+T_SIM = 300.0  # ms, total simulation time
+WIDTH = 100.0  # ms, fixed width of the current step
+DT = 0.1  # ms, simulation/recording resolution
 
-AMP_MIN, AMP_MAX, AMP_INIT = 0.0, 1500.0, 600.0      # step amplitude (pA)
+AMP_MIN, AMP_MAX, AMP_INIT = 0.0, 1500.0, 600.0  # step amplitude (pA)
 ONSET_MIN, ONSET_MAX, ONSET_INIT = 0.0, 180.0, 50.0  # step onset (ms)
 
 
@@ -70,13 +70,15 @@ ONSET_MIN, ONSET_MAX, ONSET_INIT = 0.0, 180.0, 50.0  # step onset (ms)
 # trace and the output spike times. The injected-current waveform is rebuilt
 # analytically for the top plot.
 
+
 def simulate(amplitude, onset, stop):
     nest.ResetKernel()
     nest.SetKernelStatus({"resolution": DT})
 
     neuron = nest.Create("aeif_cond_alpha")
-    dc = nest.Create("dc_generator",
-                     params={"amplitude": amplitude, "start": onset, "stop": stop})
+    dc = nest.Create(
+        "dc_generator", params={"amplitude": amplitude, "start": onset, "stop": stop}
+    )
     mm = nest.Create("multimeter", params={"record_from": ["V_m"], "interval": DT})
     sr = nest.Create("spike_recorder")
 
@@ -104,17 +106,28 @@ E_L = ref.get("E_L")
 
 amp_slider = Slider(
     fig.add_axes([0.15, 0.09, 0.7, 0.03]),
-    "amplitude (pA)  ↕", AMP_MIN, AMP_MAX, valinit=AMP_INIT, valstep=10, color="#ff7f0e",
+    "amplitude (pA)  ↕",
+    AMP_MIN,
+    AMP_MAX,
+    valinit=AMP_INIT,
+    valstep=10,
+    color="#ff7f0e",
 )
 onset_slider = Slider(
     fig.add_axes([0.15, 0.04, 0.7, 0.03]),
-    "onset (ms)  ↔", ONSET_MIN, ONSET_MAX, valinit=ONSET_INIT, valstep=1, color="#1f77b4",
+    "onset (ms)  ↔",
+    ONSET_MIN,
+    ONSET_MAX,
+    valinit=ONSET_INIT,
+    valstep=1,
+    color="#1f77b4",
 )
 
 
 ###############################################################################
 # Fourth, the update function: simulate with the current slider values and
 # redraw both panels. Clearing the axes keeps the sliders untouched.
+
 
 def update(_=None):
     amplitude = amp_slider.val
@@ -146,8 +159,14 @@ def update(_=None):
     # Bottom: membrane potential, with output spikes marked at V_peak.
     ax_v.clear()
     ax_v.plot(t, v, color="#1f77b4", lw=1.0, label="V_m")
-    ax_v.plot(spikes, np.full_like(spikes, V_peak), "o",
-              color="#d62728", ms=5, label=f"spikes ({len(spikes)})")
+    ax_v.plot(
+        spikes,
+        np.full_like(spikes, V_peak),
+        "o",
+        color="#d62728",
+        ms=5,
+        label=f"spikes ({len(spikes)})",
+    )
     ax_v.set_ylabel("membrane potential (mV)")
     ax_v.set_xlabel("time (ms)")
     ax_v.set_xlim(0, T_SIM)

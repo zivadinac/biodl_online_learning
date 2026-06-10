@@ -57,14 +57,14 @@ from matplotlib.widgets import Slider
 
 nest.set_verbosity("M_WARNING")
 
-T_SIM = 300.0   # ms, total simulation time
-WIDTH = 100.0   # ms, fixed width of the current step
-DELAY = 1.0     # ms, synaptic delay between the two neurons
-DT = 0.1        # ms, simulation/recording resolution
+T_SIM = 300.0  # ms, total simulation time
+WIDTH = 100.0  # ms, fixed width of the current step
+DELAY = 1.0  # ms, synaptic delay between the two neurons
+DT = 0.1  # ms, simulation/recording resolution
 
-AMP_MIN, AMP_MAX, AMP_INIT = 0.0, 1500.0, 1000.0     # step amplitude (pA)
+AMP_MIN, AMP_MAX, AMP_INIT = 0.0, 1500.0, 1000.0  # step amplitude (pA)
 ONSET_MIN, ONSET_MAX, ONSET_INIT = 0.0, 180.0, 50.0  # step onset (ms)
-W_MIN, W_MAX, W_INIT = 0.0, 400.0, 200.0             # synaptic weight (nS)
+W_MIN, W_MAX, W_INIT = 0.0, 400.0, 200.0  # synaptic weight (nS)
 
 
 ###############################################################################
@@ -73,6 +73,7 @@ W_MIN, W_MAX, W_INIT = 0.0, 400.0, 200.0             # synaptic weight (nS)
 # whose weight we vary. Returns the time base, both membrane traces and both
 # spike trains.
 
+
 def simulate(amplitude, onset, stop, weight):
     nest.ResetKernel()
     nest.SetKernelStatus({"resolution": DT})
@@ -80,8 +81,9 @@ def simulate(amplitude, onset, stop, weight):
     pre = nest.Create("aeif_cond_alpha")
     post = nest.Create("aeif_cond_alpha")
 
-    dc = nest.Create("dc_generator",
-                     params={"amplitude": amplitude, "start": onset, "stop": stop})
+    dc = nest.Create(
+        "dc_generator", params={"amplitude": amplitude, "start": onset, "stop": stop}
+    )
     nest.Connect(dc, pre)
     nest.Connect(pre, post, syn_spec={"weight": weight, "delay": DELAY})
 
@@ -97,8 +99,13 @@ def simulate(amplitude, onset, stop, weight):
 
     nest.Simulate(T_SIM)
 
-    return (mm.events["times"], mm.events["V_m"], mm_post.events["V_m"],
-            sr_pre.events["times"], sr_post.events["times"])
+    return (
+        mm.events["times"],
+        mm.events["V_m"],
+        mm_post.events["V_m"],
+        sr_pre.events["times"],
+        sr_post.events["times"],
+    )
 
 
 ###############################################################################
@@ -114,15 +121,30 @@ V_reset = ref.get("V_reset")
 
 amp_slider = Slider(
     fig.add_axes([0.18, 0.12, 0.7, 0.025]),
-    "amplitude (pA)  ↕", AMP_MIN, AMP_MAX, valinit=AMP_INIT, valstep=10, color="#ff7f0e",
+    "amplitude (pA)  ↕",
+    AMP_MIN,
+    AMP_MAX,
+    valinit=AMP_INIT,
+    valstep=10,
+    color="#ff7f0e",
 )
 onset_slider = Slider(
     fig.add_axes([0.18, 0.075, 0.7, 0.025]),
-    "onset (ms)  ↔", ONSET_MIN, ONSET_MAX, valinit=ONSET_INIT, valstep=1, color="#7f7f7f",
+    "onset (ms)  ↔",
+    ONSET_MIN,
+    ONSET_MAX,
+    valinit=ONSET_INIT,
+    valstep=1,
+    color="#7f7f7f",
 )
 w_slider = Slider(
     fig.add_axes([0.18, 0.03, 0.7, 0.025]),
-    "weight (nS)", W_MIN, W_MAX, valinit=W_INIT, valstep=1, color="#2ca02c",
+    "weight (nS)",
+    W_MIN,
+    W_MAX,
+    valinit=W_INIT,
+    valstep=1,
+    color="#2ca02c",
 )
 
 
@@ -130,6 +152,7 @@ w_slider = Slider(
 # A small helper: the multimeter samples V_m too coarsely to catch the spike
 # peak (aeif resets almost instantly), so set the sample at each spike time to
 # V_peak, drawing the upstroke ourselves.
+
 
 def with_peaks(t, v, spikes):
     v = np.asarray(v, dtype=float).copy()
@@ -142,6 +165,7 @@ def with_peaks(t, v, spikes):
 ###############################################################################
 # Fourth, the update function: simulate with the current slider values and
 # redraw all three panels.
+
 
 def update(_=None):
     amplitude = amp_slider.val
@@ -169,8 +193,14 @@ def update(_=None):
     ax_pre.plot(sp_pre, np.full_like(sp_pre, V_peak), "o", color="#d62728", ms=4)
     ax_pre.set_ylabel("neuron 1 V_m (mV)")
     ax_pre.set_ylim(V_reset - 5, V_peak + 5)
-    ax_pre.text(0.01, 0.9, f"presynaptic — {len(sp_pre)} spikes",
-                transform=ax_pre.transAxes, fontsize=9, color="#1f77b4")
+    ax_pre.text(
+        0.01,
+        0.9,
+        f"presynaptic — {len(sp_pre)} spikes",
+        transform=ax_pre.transAxes,
+        fontsize=9,
+        color="#1f77b4",
+    )
     ax_pre.spines[["top", "right"]].set_visible(False)
 
     # Bottom: postsynaptic neuron.
@@ -181,8 +211,14 @@ def update(_=None):
     ax_post.set_xlabel("time (ms)")
     ax_post.set_xlim(0, T_SIM)
     ax_post.set_ylim(V_reset - 5, V_peak + 5)
-    ax_post.text(0.01, 0.9, f"postsynaptic — {len(sp_post)} spikes",
-                 transform=ax_post.transAxes, fontsize=9, color="#9467bd")
+    ax_post.text(
+        0.01,
+        0.9,
+        f"postsynaptic — {len(sp_post)} spikes",
+        transform=ax_post.transAxes,
+        fontsize=9,
+        color="#9467bd",
+    )
     ax_post.spines[["top", "right"]].set_visible(False)
 
     fig.canvas.draw_idle()
