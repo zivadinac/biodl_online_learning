@@ -54,7 +54,7 @@ def binned_rate(times, t_sim, bin_ms):
 
 
 def main() -> None:
-    reset()
+    reset(seed=1)  # deterministic figures
 
     times = np.array([0.0, CUE_ON[0], CUE_ON[1]])
     cue_profile = [0.0, CUE_RATE, 0.0]

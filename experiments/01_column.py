@@ -35,7 +35,7 @@ COLORS = {"pyr": "#C0392B", "pv": "#2874A6", "sst": "#154360", "vip": "#5DADE2"}
 
 
 def main() -> None:
-    reset()
+    reset(seed=1)  # deterministic figures
 
     net = (
         Microcircuit(n_pyr=1, n_pv=1, n_sst=1, n_vip=1)

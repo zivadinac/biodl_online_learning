@@ -1139,15 +1139,6 @@ wheels = [
 ]
 
 [[package]]
-name = "snntorch"
-version = "0.9.4"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/53/a7/ce6eec2007d505612bc2bfc297d05daf9e507748d7d4a2406cae0d2a5e32/snntorch-0.9.4.tar.gz", hash = "sha256:eaa0dd46675c471bf0b616068ee777564377bcb46b2104840a4ff4332de01909", size = 95103, upload-time = "2025-02-16T21:26:01.332Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/e0/a6/c9ca7a9a335a302694f0a86d5235fcba797283f94d5cd835e1dc8efdc905/snntorch-0.9.4-py2.py3-none-any.whl", hash = "sha256:34805e8d9d3d50fa8d28eb8ee715d9196a4db115cefe497e026b3ce1b7884388", size = 125619, upload-time = "2025-02-16T21:25:59.057Z" },
-]
-
-[[package]]
 name = "stack-data"
 version = "0.6.3"
 source = { registry = "https://pypi.org/simple" }
@@ -1239,13 +1230,17 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "dynaple-model-nest" },
+    { name = "matplotlib" },
     { name = "networkx" },
-    { name = "snntorch" },
+    { name = "numpy" },
+    { name = "pyyaml" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "dynaple-model-nest", editable = "../dynaple-model-nest" },
+    { name = "matplotlib", specifier = ">=3.10.9" },
     { name = "networkx", specifier = ">=3.6.1" },
-    { name = "snntorch", specifier = ">=0.9.4" },
+    { name = "numpy", specifier = ">=2.4.4" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
 ]

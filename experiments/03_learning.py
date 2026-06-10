@@ -55,7 +55,7 @@ A_SHADE, B_SHADE = "#FCF3CF", "#EAF2F8"
 
 
 def main() -> None:
-    reset()
+    reset(seed=1)  # deterministic figures
 
     pyr = nest.Create(NEURON_MODEL, 1)
     p = neuron_params("pyr")
