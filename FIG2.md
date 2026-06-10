@@ -11,7 +11,8 @@ python experiments/fig2.py            # all panels (2c is slow, ~10-20 min)
 python experiments/fig2.py 2b 2d      # selected panels
 ```
 
-Outputs: `figures/fig2a.png … fig2d.png`. Code: `biodl/network.py`
+Outputs: `figures/fig2a.png … fig2d.png` plus `figures/fig2_rates.png`
+for the trained classifier readout trace. Code: `biodl/network.py`
 (`ClassifierNetwork`, `Fig2Config`) + `experiments/fig2.py`.
 
 ## This is a qualitative reproduction
@@ -33,7 +34,9 @@ pixel-for-pixel match is impossible. The goal is the same *mechanisms and trends
 | `ltp_window` | (7500, 9000) | **calibrated** to match-train Ca (~8600) |
 | `ltd_window` | (3800, 6000) | **calibrated** to non-match-train Ca (~4800) |
 | `eta`, `eta_l` | 0.2 | learning rate |
-| `rate_active/inactive` | 50 / 5 Hz | **from the paper** |
+| `rate_active/inactive` | 50 / 0 Hz | Active rate from the paper; inactive rate follows Chiara's `config_overlapping.yaml` (`inp_L: 0.`). The old 5 Hz background potentiated inactive synapses during teacher phases. |
+| panel 2d size | `N=32`, `n_pyr=16` per class | Larger than the fast 2c sweep so the heatmaps read like the paper panel. |
+| panel 2d device mismatch | 20% | Fabrication/device-style mismatch on neuron/synapse parameters, not class overlap. In the 2d panel, the class overlap is the shared input rows 12–19. |
 | mismatch seeds | 3 | paper averages several; downscaled |
 | epochs | 8 | paper "~10" |
 
@@ -58,8 +61,9 @@ shown separately in **2b**.
 |---|---|
 | **2a** connectivity schematic | ✅ drawn programmatically (two columns, shared input, per-column teachers, shared attention) |
 | **2b** rates + calcium over the gate | ✅ attention ON → VIP↑, SST↓, PYR↑; θ (low-pass of PYR spikes) tracks the rate. Reuses the single-column motif. θ is computed in Python (the in-NEST `Isoma_ca` needs `effective_bias=True`, which destabilises the gate weights). |
-| **2c** accuracy vs epoch × mismatch | ✅ **mechanism works** — accuracy rises above chance and the mismatch curves stay clustered (graceful degradation). Single-seed reached 0.94–0.95. This is the headline robustness result. |
-| **2d** weight matrices | ⚠️ **partial / honest failure.** The taught column shows the right structure, but the columns are **noisy and asymmetric**: without the motif's E/I balance there is runaway potentiation (a high-weight column drives its own calcium up → more potentiation). The matrices do not cleanly match the ideal target. Shown as-is. |
+| **2c** accuracy vs epoch × mismatch | ✅ **mechanism works** — accuracy rises above chance and the mismatch curves stay clustered (graceful degradation). This is the headline robustness result. |
+| **2d** weight matrices | ✅ paper-style layout: Input / Initial / Final / Test / Ideal, with A and B output blocks in the same heatmap. The NEST-trained matrix uses random 4-bit init and 20% device mismatch; repeated inference is read-only so the Test matrix stays stable. |
+| **rates / 2e** PYR readout rates | ✅ after training, an extended read-only A/B input sequence with no-input gaps shows A/B PYR rates crossing with class changes and dropping when neither class is active. |
 
 ### Sanity check (delta rule reduces to classical delta)
 

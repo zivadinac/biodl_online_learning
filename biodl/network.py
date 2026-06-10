@@ -43,28 +43,30 @@ class Fig2Config:
     """Knobs for the Fig. 2 reproduction. Items below the line are GUESSes (not
     given by the paper; chosen for mechanism, calibrated from dry runs)."""
 
-    n_input: int = 16          # paper N=64; downscaled for laptop NEST runs (GUESS)
-    n_pyr: int = 4             # PYR per column (paper 64) (GUESS)
+    n_input: int = 16  # paper N=64; downscaled for laptop NEST runs (GUESS)
+    n_pyr: int = 4  # PYR per column (paper 64) (GUESS)
     rate_active: float = 50.0  # Hz, from the paper
-    rate_inactive: float = 5.0  # Hz, from the paper
+    # Chiara's config_overlapping.yaml uses inp_L=0. Background inactive spikes
+    # otherwise potentiate "inactive" synapses during teacher phases.
+    rate_inactive: float = 0.0
 
     # ---- GUESS (calibrated against the calcium values the neurons reach) ----
-    plastic_ibias: float = 0.3   # weak input bias: keeps PYR sub-saturation so the
+    plastic_ibias: float = 0.3  # weak input bias: keeps PYR sub-saturation so the
     #                              teacher can gate calcium and inference rate tracks weights
     teacher_ibias: float = 300.0  # apical teacher strength (3-bit static)
-    teacher_rate: float = 200.0   # Hz
-    attn_ibias: float = 3.0       # attention basal drive (emulates disinhibition gate)
-    attn_rate: float = 200.0      # Hz
-    eta: float = 0.2              # learning rate (LTP)
-    eta_l: float = 0.2            # learning rate (LTD)
-    w0: int = 7                   # initial 4-bit weight (mid)
+    teacher_rate: float = 200.0  # Hz
+    attn_ibias: float = 3.0  # attention basal drive (emulates disinhibition gate)
+    attn_rate: float = 200.0  # Hz
+    eta: float = 0.2  # learning rate (LTP)
+    eta_l: float = 0.2  # learning rate (LTD)
+    w0: int = 7  # initial 4-bit weight (mid)
     # calcium LTP/LTD windows, calibrated from a dry run to the three-level
     # separation: inference (~2400, below both) < non-match train (attn only, ~4800,
     # LTD) < match train (attn+teacher, ~8600, LTP). Overrides config k_ca_th_*.
     ltp_window: tuple = (7500.0, 9000.0)
     ltd_window: tuple = (3800.0, 6000.0)
-    t_present: float = 800.0      # ms per training presentation
-    t_infer: float = 1000.0       # ms per inference presentation
+    t_present: float = 800.0  # ms per training presentation
+    t_infer: float = 1000.0  # ms per inference presentation
     seed: int = 1
 
 
@@ -83,6 +85,7 @@ class ClassifierNetwork:
         self.input_gen = None
         self.parrots = None
         self.rt = None
+        self.attention = None
 
     # -- build ------------------------------------------------------------
     def build(self) -> "ClassifierNetwork":
@@ -90,15 +93,26 @@ class ClassifierNetwork:
         c = self.cfg
         for name, plastic in ((_PLASTIC, True), (_STATIC, False)):
             if name not in nest.synapse_models:
-                nest.CopyModel(SYNAPSE_MODEL, name, {
-                    "plastic": plastic, "binarize": False if plastic else True,
-                    "n_bit": 4 if plastic else 3,
-                    "eta": c.eta if plastic else 0.0, "eta_L": c.eta_l if plastic else 0.0,
-                    "delay": 0.1})
+                nest.CopyModel(
+                    SYNAPSE_MODEL,
+                    name,
+                    {
+                        "plastic": plastic,
+                        "binarize": False if plastic else True,
+                        "n_bit": 4 if plastic else 3,
+                        "eta": c.eta if plastic else 0.0,
+                        "eta_L": c.eta_l if plastic else 0.0,
+                        "delay": 0.1,
+                    },
+                )
 
         # PYR columns (bare; effective_bias + calibrated calcium windows)
-        win = {"k_ca_th_L_plus": c.ltp_window[0], "k_ca_th_H_plus": c.ltp_window[1],
-               "k_ca_th_L_minus": c.ltd_window[0], "k_ca_th_H_minus": c.ltd_window[1]}
+        win = {
+            "k_ca_th_L_plus": c.ltp_window[0],
+            "k_ca_th_H_plus": c.ltp_window[1],
+            "k_ca_th_L_minus": c.ltd_window[0],
+            "k_ca_th_H_minus": c.ltd_window[1],
+        }
         for name in self.COLUMNS:
             pop = nest.Create(NEURON_MODEL, c.n_pyr)
             p = neuron_params("pyr")
@@ -109,22 +123,40 @@ class ClassifierNetwork:
         self.rt = self.pyr["A"][0].get("receptor_types")
 
         # shared N-dim input -> every PYR of both columns (plastic NMDA)
-        self.input_gen = nest.Create("poisson_generator", c.n_input, {"rate": c.rate_inactive})
+        self.input_gen = nest.Create(
+            "poisson_generator", c.n_input, {"rate": c.rate_inactive}
+        )
         self.parrots = nest.Create("parrot_neuron", c.n_input)
         nest.Connect(self.input_gen, self.parrots, "one_to_one", {"delay": 0.1})
         for name in self.COLUMNS:
-            nest.Connect(self.parrots, self.pyr[name], "all_to_all",
-                         {"synapse_model": _PLASTIC, "receptor_type": int(self.rt["NMDA_BASAL_SPIKES"]),
-                          "w": c.w0, "Ibias": c.plastic_ibias})
-            self.plastic_conn[name] = nest.GetConnections(
-                source=self.parrots, target=self.pyr[name], synapse_model=_PLASTIC)
+            nest.Connect(
+                self.parrots,
+                self.pyr[name],
+                "all_to_all",
+                {
+                    "synapse_model": _PLASTIC,
+                    "receptor_type": int(self.rt["NMDA_BASAL_SPIKES"]),
+                    "w": c.w0,
+                    "Ibias": c.plastic_ibias,
+                },
+            )
+        for name in self.COLUMNS:
+            self.plastic_conn[name] = self._column_plastic_connections(name)
 
         # per-column apical teacher (static AMPA)
         for name in self.COLUMNS:
             g = nest.Create("poisson_generator", 1, {"rate": 0.0})
-            nest.Connect(g, self.pyr[name], "all_to_all",
-                         {"synapse_model": _STATIC, "receptor_type": int(self.rt["AMPA_APICAL_SPIKES"]),
-                          "w": 7, "Ibias": c.teacher_ibias})
+            nest.Connect(
+                g,
+                self.pyr[name],
+                "all_to_all",
+                {
+                    "synapse_model": _STATIC,
+                    "receptor_type": int(self.rt["AMPA_APICAL_SPIKES"]),
+                    "w": 7,
+                    "Ibias": c.teacher_ibias,
+                },
+            )
             self.teacher[name] = g
             sr = nest.Create("spike_recorder")
             nest.Connect(self.pyr[name], sr)
@@ -135,19 +167,44 @@ class ClassifierNetwork:
         # inference PYR sits below both windows so weights are frozen.
         self.attention = nest.Create("poisson_generator", 1, {"rate": 0.0})
         for name in self.COLUMNS:
-            nest.Connect(self.attention, self.pyr[name], "all_to_all",
-                         {"synapse_model": _STATIC, "receptor_type": int(self.rt["AMPA_BASAL_SPIKES"]),
-                          "w": 7, "Ibias": c.attn_ibias})
+            nest.Connect(
+                self.attention,
+                self.pyr[name],
+                "all_to_all",
+                {
+                    "synapse_model": _STATIC,
+                    "receptor_type": int(self.rt["AMPA_BASAL_SPIKES"]),
+                    "w": 7,
+                    "Ibias": c.attn_ibias,
+                },
+            )
 
         if self.mismatch > 0:
             self._inject_mismatch()
+        return self
+
+    def _column_plastic_connections(self, column: str):
+        return nest.GetConnections(
+            source=self.parrots, target=self.pyr[column], synapse_model=_PLASTIC
+        )
+
+    def _set_input_plasticity(self, enabled: bool) -> None:
+        for name in self.COLUMNS:
+            self._column_plastic_connections(name).set({"plastic": bool(enabled)})
+
+    def randomize_input_weights(self, seed: int | None = None) -> "ClassifierNetwork":
+        """Random 4-bit initial weights on the plastic input synapses."""
+        rng = np.random.default_rng(self.cfg.seed if seed is None else seed)
+        for name in self.COLUMNS:
+            conns = self._column_plastic_connections(name)
+            conns.set([{"w": int(v)} for v in rng.integers(0, 16, size=len(conns))])
         return self
 
     def _inject_mismatch(self) -> None:
         """Multiplicative lognormal mismatch (CV=self.mismatch) on per-neuron
         threshold/refractory/time-constants and per-synapse bias current."""
         rng = np.random.default_rng(self.cfg.seed + int(self.mismatch * 1000))
-        sigma = np.sqrt(np.log(1 + self.mismatch ** 2))
+        sigma = np.sqrt(np.log(1 + self.mismatch**2))
 
         def jit(n):
             return rng.lognormal(-0.5 * sigma * sigma, sigma, size=n)
@@ -160,20 +217,29 @@ class ClassifierNetwork:
                 nominal = np.atleast_1d(base[k]).astype(float)
                 pop.set([{k: float(v * j)} for v, j in zip(nominal, jit(len(pop)))])
         for name in self.COLUMNS:
-            conns = self.plastic_conn[name]
+            conns = self._column_plastic_connections(name)
             ib = np.atleast_1d(conns.get("Ibias")).astype(float)
             conns.set([{"Ibias": float(v * j)} for v, j in zip(ib, jit(len(ib)))])
 
     # -- protocol ---------------------------------------------------------
     def set_pattern(self, active) -> None:
         active = set(int(i) for i in active)
-        self.input_gen.set([
-            {"rate": self.cfg.rate_active if i in active else self.cfg.rate_inactive}
-            for i in range(self.cfg.n_input)])
+        self.input_gen.set(
+            [
+                {
+                    "rate": self.cfg.rate_active
+                    if i in active
+                    else self.cfg.rate_inactive
+                }
+                for i in range(self.cfg.n_input)
+            ]
+        )
 
     def set_teacher(self, column: str | None) -> None:
         for name in self.COLUMNS:
-            self.teacher[name].set({"rate": self.cfg.teacher_rate if name == column else 0.0})
+            self.teacher[name].set(
+                {"rate": self.cfg.teacher_rate if name == column else 0.0}
+            )
 
     def set_attention(self, on: bool) -> None:
         self.attention.set({"rate": self.cfg.attn_rate if on else 0.0})
@@ -184,6 +250,7 @@ class ClassifierNetwork:
         self.set_pattern(active)
         self.set_teacher(teacher)
         self.set_attention(True)
+        self._set_input_plasticity(True)
         nest.Simulate(t)
 
     # -- readout ----------------------------------------------------------
@@ -194,9 +261,15 @@ class ClassifierNetwork:
         self.set_attention(False)  # gate closed -> PYR below windows -> weights frozen
         for name in self.COLUMNS:
             self.sr[name].set({"n_events": 0})
-        nest.Simulate(t)
-        return {name: 1e3 * self.sr[name].get("n_events") / (len(self.pyr[name]) * t)
-                for name in self.COLUMNS}
+        self._set_input_plasticity(False)
+        try:
+            nest.Simulate(t)
+        finally:
+            self._set_input_plasticity(True)
+        return {
+            name: 1e3 * self.sr[name].get("n_events") / (len(self.pyr[name]) * t)
+            for name in self.COLUMNS
+        }
 
     def predict(self, active, t: float | None = None) -> str:
         r = self.infer_rates(active, t)
@@ -204,7 +277,7 @@ class ClassifierNetwork:
 
     def weight_matrix(self, column: str) -> np.ndarray:
         """input(N) x PYR weight matrix for a column (4-bit w values)."""
-        conns = self.plastic_conn[column]
+        conns = self._column_plastic_connections(column)
         w = np.asarray(conns.get("w"), dtype=float)
         src = np.asarray(conns.get("source"))
         tgt = np.asarray(conns.get("target"))
