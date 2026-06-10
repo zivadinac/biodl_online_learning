@@ -41,11 +41,12 @@ N = 16
 PAT_A = list(range(0, 10))    # inputs 0..9
 PAT_B = list(range(6, 16))    # inputs 6..15  (overlap 6..9 = shared/uninformative)
 MISMATCH = [0.0, 0.10, 0.20, 0.30]
-EPOCHS = 8
-SEEDS = 3                      # GUESS (paper averages several; downscaled)
-T_PRESENT = 500.0
-T_TEST = 300.0
-N_TEST = 6                     # test presentations per class per epoch
+EPOCHS = 10                    # learning needs ~10 epochs x 800ms to converge (0% -> ~0.90)
+SEEDS = 2                      # GUESS (paper averages several; downscaled for runtime)
+T_PRESENT = 800.0
+T_TEST = 350.0
+N_TEST = 3                     # test presentations per class per checkpoint
+CHECKPOINTS = (0, 5, 10)       # epochs at which to measure accuracy (keeps 2c cheap)
 
 
 def _new(mismatch, seed):
@@ -66,19 +67,21 @@ def _accuracy(net):
 # ----------------------------------------------------------------------- 2c
 def panel_2c():
     print("[2c] accuracy vs epoch x device mismatch (this is the slow one)")
-    acc = np.full((len(MISMATCH), SEEDS, EPOCHS + 1), np.nan)
+    acc = np.full((len(MISMATCH), SEEDS, len(CHECKPOINTS)), np.nan)
     for mi, m in enumerate(MISMATCH):
         for s in range(SEEDS):
             net = _new(m, seed=s + 1)
-            acc[mi, s, 0] = _accuracy(net)  # epoch 0 = chance-ish (random init)
-            for ep in range(EPOCHS):
-                net.present(PAT_A, "A", T_PRESENT)
-                net.present(PAT_B, "B", T_PRESENT)
-                acc[mi, s, ep + 1] = _accuracy(net)
-            print(f"    mismatch={m:.0%} seed={s + 1}: final acc={acc[mi, s, -1]:.2f}")
+            ep = 0
+            for ci, cp in enumerate(CHECKPOINTS):
+                while ep < cp:  # train up to this checkpoint
+                    net.present(PAT_A, "A", T_PRESENT)
+                    net.present(PAT_B, "B", T_PRESENT)
+                    ep += 1
+                acc[mi, s, ci] = _accuracy(net)
+            print(f"    mismatch={m:.0%} seed={s + 1}: final acc={acc[mi, s, -1]:.2f}", flush=True)
 
     fig, ax = plt.subplots(figsize=(7.5, 5))
-    epochs = np.arange(EPOCHS + 1)
+    epochs = np.array(CHECKPOINTS)
     colors = plt.cm.viridis(np.linspace(0.1, 0.85, len(MISMATCH)))
     for mi, m in enumerate(MISMATCH):
         mean = np.nanmean(acc[mi], axis=0)
@@ -143,9 +146,11 @@ def panel_2b():
     nest.ResetKernel()
     nest.SetKernelStatus({"resolution": 0.1})
     gate = {"teacher_pyr": (7, 6000), "sst_pyr": (7, 8000), "vip_sst": (7, 6000)}
+    # the "training" window = attention + teacher together (both gated to 1-2 s),
+    # so baseline (0-1 s, 2-3 s) has no drive -> PYR ~silent -> theta ~0.
     net = (Microcircuit(1, 1, 1, 1, weights=gate).build()
-           .drive_profiles(np.array([0.0, 1000.0, 2000.0]), input=0.0, teacher=150.0,
-                           cue=[0.0, 400.0, 0.0])
+           .drive_profiles(np.array([0.0, 1000.0, 2000.0]), input=0.0,
+                           teacher=[0.0, 150.0, 0.0], cue=[0.0, 400.0, 0.0])
            .tonic(sst=200.0).attach_recorders())
     net.pop["pyr"].set({"Iapical_low": 0.0})
     nest.Simulate(3000.0)
