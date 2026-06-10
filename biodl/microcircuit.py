@@ -38,19 +38,22 @@ PORT = {
 # per-synapse population weights in config_overlapping.yaml. The apical (teacher)
 # port is ~10x more potent than the basal ports, hence its smaller Ibias.
 # biodl/weights.py will formalise the float-config -> (w, Ibias) mapping.
+# Static (non-plastic) synapses are 3-bit, so w in [0,7]; the postsynaptic drive
+# is set by the product w*Ibias (n_bit only clips the max weight, it does not
+# rescale). Every static edge uses w=7 (full 3-bit) and tunes strength via Ibias.
 DEFAULT_WEIGHTS = {
-    "input_pyr": (12, 2500),  # bottom-up input -> PYR basal (NMDA, plastic in C)
-    "input_pv": (10, 1500),  # bottom-up input -> PV
-    "teacher_pyr": (15, 4000),  # top-down teacher -> PYR apical (AMPA), drives the
-    #                             rectified apical (see params.NEGATE / Iapical_low)
-    "cue_vip": (15, 2000),  # attention cue -> VIP
-    "pyr_pv": (12, 1500),  # PYR -> PV
-    "pyr_sst": (12, 1500),  # PYR -> SST
-    "pv_pyr": (10, 1500),  # PV -| PYR (GABA_A on basal)
-    "sst_pyr": (12, 2000),  # SST -| PYR apical (the gate, GABA_B)
-    "vip_sst": (15, 2500),  # VIP -| SST (disinhibition, GABA_B)
-    "pyr_pyr": (6, 1000),  # recurrent excitation (size>=2)
-    "pv_pv": (6, 1000),  # recurrent inhibition (size>=2)
+    "input_pyr": (7, 4300),   # bottom-up input -> PYR basal (NMDA, plastic in C -> 4-bit)
+    "input_pv": (7, 2150),    # bottom-up input -> PV
+    "teacher_pyr": (7, 8600),  # top-down teacher -> PYR apical (AMPA), drives the
+    #                            rectified apical (see params.NEGATE / Iapical_low)
+    "cue_vip": (7, 4300),     # attention cue -> VIP
+    "pyr_pv": (7, 2600),      # PYR -> PV
+    "pyr_sst": (7, 2600),     # PYR -> SST
+    "pv_pyr": (7, 2150),      # PV -| PYR (GABA_A on basal)
+    "sst_pyr": (7, 3400),     # SST -| PYR apical (the gate, GABA_B)
+    "vip_sst": (7, 5400),     # VIP -| SST (disinhibition, GABA_B)
+    "pyr_pyr": (6, 1000),     # recurrent excitation (size>=2)
+    "pv_pv": (6, 1000),       # recurrent inhibition (size>=2)
 }
 
 # Canonical-motif edges, the single source of truth for both the builder and the
@@ -122,7 +125,8 @@ class Microcircuit:
             nest.CopyModel(
                 SYNAPSE_MODEL,
                 _STATIC,
-                {"plastic": False, "binarize": True, "eta": 0.0, "eta_L": 0.0, "delay": self.delay},
+                {"plastic": False, "binarize": True, "n_bit": 3,  # static synapses: 3-bit
+                 "eta": 0.0, "eta_L": 0.0, "delay": self.delay},
             )
         if _PLASTIC not in existing:
             syn = synapse_config()
@@ -132,6 +136,7 @@ class Microcircuit:
                 {
                     "plastic": True,
                     "binarize": bool(syn.get("binarize", True)),
+                    "n_bit": 4,  # plastic synapses: 4-bit
                     "eta": float(syn.get("eta", 0.0)),
                     "eta_L": float(syn.get("eta_L", 0.0)),
                     "delay": self.delay,
@@ -232,7 +237,7 @@ class Microcircuit:
                 self.gen[src], self.pop[dst], "all_to_all", self._syn(edge, receptor, model=model)
             )
 
-    def tonic(self, w: int = 12, ibias: float = 1500.0, **rates) -> "Microcircuit":
+    def tonic(self, w: int = 7, ibias: float = 2600.0, **rates) -> "Microcircuit":
         """Add a constant baseline excitatory (AMPA_BASAL) drive to populations.
 
         In a 1-neuron-per-type column a cell lacks the upstream population it would

@@ -38,7 +38,8 @@ SST_TONIC = 200.0      # baseline drive keeping SST active when un-gated
 BIN = 100.0            # ms, time-resolved rate (smoothing for a 1-cell raster)
 
 # stronger apical gate than the column default, to make the swing legible
-GATE_WEIGHTS = {"teacher_pyr": (15, 6000), "sst_pyr": (15, 8000), "vip_sst": (15, 6000)}
+# (static synapses are 3-bit: w=7, strength via Ibias)
+GATE_WEIGHTS = {"teacher_pyr": (7, 12900), "sst_pyr": (7, 17000), "vip_sst": (7, 12900)}
 
 FIG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "figures")
 
