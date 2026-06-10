@@ -39,9 +39,10 @@ PORT = {
 # port is ~10x more potent than the basal ports, hence its smaller Ibias.
 # biodl/weights.py will formalise the float-config -> (w, Ibias) mapping.
 DEFAULT_WEIGHTS = {
-    "input_pyr": (10, 1500),  # bottom-up input -> PYR basal (NMDA, plastic in C)
+    "input_pyr": (12, 2500),  # bottom-up input -> PYR basal (NMDA, plastic in C)
     "input_pv": (10, 1500),  # bottom-up input -> PV
-    "teacher_pyr": (6, 200),  # top-down teacher -> PYR apical (AMPA, potent)
+    "teacher_pyr": (15, 4000),  # top-down teacher -> PYR apical (AMPA), drives the
+    #                             rectified apical (see params.NEGATE / Iapical_low)
     "cue_vip": (15, 2000),  # attention cue -> VIP
     "pyr_pv": (12, 1500),  # PYR -> PV
     "pyr_sst": (12, 1500),  # PYR -> SST
@@ -230,6 +231,25 @@ class Microcircuit:
             nest.Connect(
                 self.gen[src], self.pop[dst], "all_to_all", self._syn(edge, receptor, model=model)
             )
+
+    def tonic(self, w: int = 12, ibias: float = 1500.0, **rates) -> "Microcircuit":
+        """Add a constant baseline excitatory (AMPA_BASAL) drive to populations.
+
+        In a 1-neuron-per-type column a cell lacks the upstream population it would
+        be driven by in the full network. ``tonic(sst=200)`` gives SST a standing
+        drive so it is tonically active and can then be gated by VIP — the
+        disinhibition gate needs SST active by default. ``rates`` maps a population
+        key (``"pyr"``/``"pv"``/``"sst"``/``"vip"``) to a rate in Hz.
+        """
+        for key, rate in rates.items():
+            g = nest.Create("poisson_generator", 1, {"rate": float(rate)})
+            self.gen[f"tonic_{key}"] = g
+            nest.Connect(
+                g, self.pop[key], "all_to_all",
+                {"synapse_model": _STATIC, "receptor_type": int(self.rt[PORT["ampa_basal"]]),
+                 "w": int(w), "Ibias": float(ibias)},
+            )
+        return self
 
     # -- recording --------------------------------------------------------
     def attach_recorders(self, record_from: list | None = None) -> "Microcircuit":
