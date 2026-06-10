@@ -30,21 +30,25 @@ PORT = {
     "gaba_b_basal": "GABA_B_BASAL_SPIKES",
 }
 
-# Starter (w, Ibias) per edge. w is the integer 4-bit weight [0,15], Ibias the
-# bias current it scales. These are hand-tuned starting points; biodl/weights.py
-# will formalise the float-config-weight -> (w, Ibias) mapping once calibrated.
+# (w, Ibias) per edge. w is the integer 4-bit weight [0,15], Ibias the bias
+# current it scales; postsynaptic drive tracks the product w*Ibias. These are
+# calibrated for the *1-neuron-per-type* column: with no population to sum over,
+# a single synapse must carry the full drive, so Ibias is far larger than the
+# per-synapse population weights in config_overlapping.yaml. The apical (teacher)
+# port is ~10x more potent than the basal ports, hence its smaller Ibias.
+# biodl/weights.py will formalise the float-config -> (w, Ibias) mapping.
 DEFAULT_WEIGHTS = {
-    "input_pyr": (8, 100),    # bottom-up input -> PYR basal (NMDA, plastic in C)
-    "input_pv": (10, 100),    # bottom-up input -> PV
-    "teacher_pyr": (8, 100),  # top-down teacher -> PYR apical (AMPA)
-    "cue_vip": (12, 100),     # attention cue -> VIP
-    "pyr_pv": (8, 100),       # PYR -> PV
-    "pyr_sst": (8, 100),      # PYR -> SST
-    "pv_pyr": (8, 100),       # PV -| PYR (GABA_A on basal)
-    "sst_pyr": (10, 100),     # SST -| PYR apical (the gate, GABA_B)
-    "vip_sst": (12, 100),     # VIP -| SST (disinhibition, GABA_B)
-    "pyr_pyr": (4, 100),      # recurrent excitation (size>=2)
-    "pv_pv": (4, 100),        # recurrent inhibition (size>=2)
+    "input_pyr": (10, 1500),   # bottom-up input -> PYR basal (NMDA, plastic in C)
+    "input_pv": (10, 1500),    # bottom-up input -> PV
+    "teacher_pyr": (6, 200),   # top-down teacher -> PYR apical (AMPA, potent)
+    "cue_vip": (15, 2000),     # attention cue -> VIP
+    "pyr_pv": (12, 1500),      # PYR -> PV
+    "pyr_sst": (12, 1500),     # PYR -> SST
+    "pv_pyr": (10, 1500),      # PV -| PYR (GABA_A on basal)
+    "sst_pyr": (12, 2000),     # SST -| PYR apical (the gate, GABA_B)
+    "vip_sst": (15, 2500),     # VIP -| SST (disinhibition, GABA_B)
+    "pyr_pyr": (6, 1000),      # recurrent excitation (size>=2)
+    "pv_pv": (6, 1000),        # recurrent inhibition (size>=2)
 }
 
 _STATIC = "biodl_static_syn"
