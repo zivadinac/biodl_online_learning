@@ -51,6 +51,31 @@ DEFAULT_WEIGHTS = {
     "pv_pv": (6, 1000),        # recurrent inhibition (size>=2)
 }
 
+# Canonical-motif edges, the single source of truth for both the builder and the
+# connectivity graph. Each: (src, dst, weight_key, receptor, sign).
+# sign is "+" excitatory / "-" inhibitory (determined by the receptor; kept for plots).
+MOTIF_EDGES = [
+    ("pyr", "pv", "pyr_pv", "ampa_basal", "+"),
+    ("pyr", "sst", "pyr_sst", "ampa_basal", "+"),
+    ("pv", "pyr", "pv_pyr", "gaba_a_basal", "-"),
+    ("sst", "pyr", "sst_pyr", "gaba_b_apical", "-"),   # the gate
+    ("vip", "sst", "vip_sst", "gaba_b_basal", "-"),    # disinhibition
+]
+
+# Recurrent edges — present only at population size >= 2 (no autapses).
+RECURRENT_EDGES = [
+    ("pyr", "pyr", "pyr_pyr", "ampa_basal", "+"),
+    ("pv", "pv", "pv_pv", "gaba_a_basal", "-"),
+]
+
+# External Poisson drives: (source, dst, weight_key, receptor, sign).
+DRIVE_EDGES = [
+    ("input", "pyr", "input_pyr", "nmda_basal", "+"),   # plastic in learning expts
+    ("input", "pv", "input_pv", "ampa_basal", "+"),
+    ("teacher", "pyr", "teacher_pyr", "ampa_apical", "+"),
+    ("cue", "vip", "cue_vip", "ampa_basal", "+"),
+]
+
 _STATIC = "biodl_static_syn"
 _PLASTIC = "biodl_plastic_syn"
 
@@ -122,39 +147,28 @@ class Microcircuit:
         nest.Connect(self.pop[src], self.pop[tgt], "all_to_all", self._syn(edge, receptor))
 
     def _connect_populations(self) -> None:
-        # recurrent, no autapses (only present at population size >= 2)
-        if self.sizes["pyr"] >= 2:
-            nest.Connect(self.pop["pyr"], self.pop["pyr"],
-                         {"rule": "all_to_all", "allow_autapses": False},
-                         self._syn("pyr_pyr", "ampa_basal"))
-        if self.sizes["pv"] >= 2:
-            nest.Connect(self.pop["pv"], self.pop["pv"],
-                         {"rule": "all_to_all", "allow_autapses": False},
-                         self._syn("pv_pv", "gaba_a_basal"))
         # inter-population motif
-        self._connect_pop("pyr", "pv", "pyr_pv", "ampa_basal")
-        self._connect_pop("pyr", "sst", "pyr_sst", "ampa_basal")
-        self._connect_pop("pv", "pyr", "pv_pyr", "gaba_a_basal")
-        self._connect_pop("sst", "pyr", "sst_pyr", "gaba_b_apical")  # the gate
-        self._connect_pop("vip", "sst", "vip_sst", "gaba_b_basal")   # disinhibition
+        for src, dst, edge, receptor, _sign in MOTIF_EDGES:
+            self._connect_pop(src, dst, edge, receptor)
+        # recurrent, no autapses (only present at population size >= 2)
+        for src, dst, edge, receptor, _sign in RECURRENT_EDGES:
+            if self.sizes[src] >= 2:
+                nest.Connect(self.pop[src], self.pop[dst],
+                             {"rule": "all_to_all", "allow_autapses": False},
+                             self._syn(edge, receptor))
 
     # -- external drive ---------------------------------------------------
     def drive(self, input_rate: float = 0.0, teacher_rate: float = 0.0,
               cue_rate: float = 0.0) -> "Microcircuit":
         """Attach the three external Poisson drives: input, teacher, attention cue."""
-        self.gen["input"] = nest.Create("poisson_generator", 1, {"rate": float(input_rate)})
-        self.gen["teacher"] = nest.Create("poisson_generator", 1, {"rate": float(teacher_rate)})
-        self.gen["cue"] = nest.Create("poisson_generator", 1, {"rate": float(cue_rate)})
+        rates = {"input": input_rate, "teacher": teacher_rate, "cue": cue_rate}
+        for name, rate in rates.items():
+            self.gen[name] = nest.Create("poisson_generator", 1, {"rate": float(rate)})
 
-        in_model = _PLASTIC if self.plastic_input else _STATIC
-        nest.Connect(self.gen["input"], self.pop["pyr"], "all_to_all",
-                     self._syn("input_pyr", "nmda_basal", model=in_model))
-        nest.Connect(self.gen["input"], self.pop["pv"], "all_to_all",
-                     self._syn("input_pv", "ampa_basal"))
-        nest.Connect(self.gen["teacher"], self.pop["pyr"], "all_to_all",
-                     self._syn("teacher_pyr", "ampa_apical"))
-        nest.Connect(self.gen["cue"], self.pop["vip"], "all_to_all",
-                     self._syn("cue_vip", "ampa_basal"))
+        for src, dst, edge, receptor, _sign in DRIVE_EDGES:
+            model = _PLASTIC if (edge == "input_pyr" and self.plastic_input) else _STATIC
+            nest.Connect(self.gen[src], self.pop[dst], "all_to_all",
+                         self._syn(edge, receptor, model=model))
         return self
 
     # -- recording --------------------------------------------------------
