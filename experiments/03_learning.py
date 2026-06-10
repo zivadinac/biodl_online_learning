@@ -12,7 +12,8 @@ synapse, exactly as in Fig. 3c / Fig. 2d.
 
 Learning needs the calcium proxy in the LTP/LTD windows: that requires
 ``effective_bias=True`` (which Chiara's config omits) together with the config's
-own ``k_ca_th_*`` windows, and a strong apical teacher.
+own ``k_ca_th_*`` windows, and a strong apical teacher. Plastic synapses are
+4-bit (w in [0,15]); the static teacher is 3-bit.
 
 Run:  python experiments/03_learning.py
 """
@@ -23,6 +24,7 @@ import sys
 import matplotlib
 
 matplotlib.use("Agg")
+import matplotlib.patches as mpatches  # noqa: E402
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
@@ -40,13 +42,14 @@ IN_RATE = 10.0       # Hz, an active input channel
 TEACH_RATE = 200.0   # Hz, apical teacher during pattern A
 W0 = 7               # initial 4-bit weight [0,15]
 IBIAS = 100.0
-ETA = 0.2            # learning rate (smaller, so graded weights can settle mid)
+ETA = 0.2            # learning rate
 BINARIZE = False     # graded 4-bit weights (paper Fig 2d/3c); True = binary 0/15
 
 FIG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "figures")
 WCOL = {"W1": "#1E8449", "W2": "#B7950B", "W3": "#C0392B"}
-# pattern -> which channels are active (channel index 0,1,2 == W1,W2,W3)
-PATTERN = {"A": (0, 1), "B": (1, 2)}
+NAMES = ["W1", "W2", "W3"]
+PATTERN = {"A": (0, 1), "B": (1, 2)}  # which channels (0,1,2 == W1,W2,W3) are active
+A_SHADE, B_SHADE = "#FCF3CF", "#EAF2F8"
 
 
 def main() -> None:
@@ -85,7 +88,6 @@ def main() -> None:
     mm = nest.Create("multimeter", {"record_from": ["Isoma_ca"]})
     nest.Connect(mm, pyr)
 
-    # alternate A / B presentations
     schedule = []  # (t_start, t_stop, pattern)
     t = 0.0
     for _ in range(N_ITER):
@@ -97,58 +99,94 @@ def main() -> None:
             schedule.append((t, t + T_PHASE, pat))
             t += T_PHASE
 
-    # weight trajectories per channel (weight_recorder stores w*Ibias)
+    # ---- data ----
     ev = wr.get("events")
-    wt, wsnd, wval = np.asarray(ev["times"]), np.asarray(ev["senders"]), np.asarray(ev["weights"]) / IBIAS
+    wt = np.asarray(ev["times"])
+    wsnd = np.asarray(ev["senders"])
+    wval = np.asarray(ev["weights"]) / IBIAS  # weight_recorder stores w*Ibias
     tr = mm.get("events")
-
-    fig, (ax_w, ax_ca) = plt.subplots(2, 1, figsize=(11, 6.5), sharex=True)
-    for (t0, t1, pat) in schedule:
-        for ax in (ax_w, ax_ca):
-            ax.axvspan(t0 / 1e3, t1 / 1e3, color="#FdF2C9" if pat == "A" else "#EBF1F7",
-                       alpha=0.7, lw=0)
+    t_ca, ca = np.asarray(tr["times"]) / 1e3, np.asarray(tr["Isoma_ca"])
+    t_end = N_ITER * 2 * T_PHASE
+    half = N_ITER * T_PHASE
 
     def time_avg(ch, t_from):
-        """Time-weighted average weight of channel ch over [t_from, T_SIM] ms."""
+        """Time-weighted average weight of channel ch over [t_from, t_end] ms."""
         m = wsnd == parrot_id[ch]
-        ts = np.concatenate([[0.0], wt[m], [N_ITER * 2 * T_PHASE]])
+        ts = np.concatenate([[0.0], wt[m], [t_end]])
         vs = np.concatenate([[W0], wval[m], [wval[m][-1] if m.any() else W0]])
-        seg_t = np.clip(ts[1:], t_from, None) - np.clip(ts[:-1], t_from, None)
-        return float(np.sum(seg_t * vs[:-1]) / max(np.sum(seg_t), 1e-9))
+        seg = np.clip(ts[1:], t_from, None) - np.clip(ts[:-1], t_from, None)
+        return float(np.sum(seg * vs[:-1]) / max(np.sum(seg), 1e-9))
 
-    half = N_ITER * T_PHASE  # midpoint in ms
-    for ch, name in enumerate(["W1", "W2", "W3"]):
+    means = [time_avg(ch, half) for ch in range(3)]
+
+    # ---- figure ----
+    fig = plt.figure(figsize=(12, 7.6))
+    gs = fig.add_gridspec(3, 2, width_ratios=[4.3, 1.0],
+                          height_ratios=[0.72, 1.5, 1.2], hspace=0.16, wspace=0.18)
+    ax_stim = fig.add_subplot(gs[0, 0])
+    ax_w = fig.add_subplot(gs[1, 0], sharex=ax_stim)
+    ax_ca = fig.add_subplot(gs[2, 0], sharex=ax_stim)
+    ax_bar = fig.add_subplot(gs[1:, 1])
+
+    # --- stimulus schedule (which inputs + teacher are active each phase) ---
+    yrow = {"Teacher": 3, "W1": 2, "W2": 1, "W3": 0}
+    rcol = {"Teacher": "#9B1B1B", **WCOL}
+    for (t0, t1, pat) in schedule:
+        items = {NAMES[c] for c in PATTERN[pat]} | ({"Teacher"} if pat == "A" else set())
+        for it in items:
+            ax_stim.broken_barh([(t0 / 1e3, (t1 - t0) / 1e3)], (yrow[it] - 0.38, 0.76),
+                                facecolors=rcol[it])
+    ax_stim.set_yticks(list(yrow.values()))
+    ax_stim.set_yticklabels(list(yrow.keys()), fontsize=9)
+    ax_stim.set_ylim(-0.6, 3.6)
+    ax_stim.tick_params(labelbottom=False)
+    ax_stim.set_title("Local three-factor delta-rule learning  —  one PYR, 3 plastic inputs (Fig. 3c)",
+                      fontsize=12, fontweight="bold", pad=10)
+
+    # --- weight trajectories (raw faint, 2nd-half mean bold-dotted) ---
+    for ch, name in enumerate(NAMES):
         m = wsnd == parrot_id[ch]
-        ax_w.step(np.concatenate([[0], wt[m]]) / 1e3,
-                  np.concatenate([[W0], wval[m]]), where="post", color=WCOL[name], lw=2, label=name)
-        ax_w.axhline(time_avg(ch, half), color=WCOL[name], ls=":", lw=1.2, alpha=0.8)
-    ax_w.set_ylabel("plastic weight  w [0–15]")
-    ax_w.set_ylim(-0.5, 15.5)
-    ax_w.set_title("Delta-rule learning: A drives W1,W2 (+teacher); B drives W2,W3 (no teacher)\n"
-                   "→ W1 potentiates, W3 depresses; W2 (shared) is pushed both ways → "
-                   "intermediate on average (dotted = 2nd-half mean)")
-    ax_w.legend(loc="center left", fontsize=9)
+        ax_w.step(np.concatenate([[0], wt[m]]) / 1e3, np.concatenate([[W0], wval[m]]),
+                  where="post", color=WCOL[name], lw=1.1, alpha=0.45)
+        ax_w.axhline(means[ch], color=WCOL[name], ls=(0, (1, 1)), lw=2.0, label=f"{name} (mean {means[ch]:.1f})")
+    ax_w.set_ylabel("plastic weight  w ∈ [0,15]")
+    ax_w.set_ylim(-0.6, 15.6)
+    ax_w.set_yticks([0, 5, 10, 15])
+    ax_w.tick_params(labelbottom=False)
+    ax_w.legend(loc="center left", fontsize=8.5, framealpha=0.9)
+    ax_w.text(0.5, 1.03, "W1 potentiates · W3 depresses · W2 (shared) → intermediate",
+              transform=ax_w.transAxes, ha="center", fontsize=9.5, color="#333")
 
-    ax_ca.plot(np.asarray(tr["times"]) / 1e3, tr["Isoma_ca"], color="black", lw=0.8,
-               label="Isoma_ca (calcium proxy)")
-    for key, c in (("k_ca_th_L_plus", "red"), ("k_ca_th_H_plus", "red"),
-                   ("k_ca_th_L_minus", "blue"), ("k_ca_th_H_minus", "blue")):
-        ax_ca.axhline(win[key], color=c, ls="--", lw=0.8)
-    ax_ca.set_ylabel("Isoma_ca (pA)")
+    # --- calcium proxy with shaded LTP/LTD windows ---
+    ax_ca.axhspan(win["k_ca_th_L_minus"], win["k_ca_th_H_minus"], color="#2980B9", alpha=0.10)
+    ax_ca.axhspan(win["k_ca_th_L_plus"], win["k_ca_th_H_plus"], color="#E74C3C", alpha=0.14)
+    ax_ca.plot(t_ca, ca, color="black", lw=0.8)
+    ax_ca.text(t_end / 1e3, (win["k_ca_th_L_plus"] + win["k_ca_th_H_plus"]) / 2, "LTP ",
+               va="center", ha="right", fontsize=8, color="#C0392B", fontweight="bold")
+    ax_ca.text(t_end / 1e3, win["k_ca_th_L_minus"], "LTD ", va="top", ha="right",
+               fontsize=8, color="#2471A3", fontweight="bold")
+    ax_ca.set_ylabel("Isoma_ca (pA)\ncalcium proxy")
     ax_ca.set_xlabel("time (s)")
-    ax_ca.legend(loc="upper right", fontsize=8)
-    ax_ca.text(0.01, 0.92, "yellow = pattern A (taught), blue = pattern B (untaught)",
-               transform=ax_ca.transAxes, fontsize=8, color="#555")
+    ax_ca.set_xlim(0, t_end / 1e3)
 
-    fig.tight_layout()
+    # --- learned-weights bar summary ---
+    yb = np.arange(3)[::-1]
+    ax_bar.barh(yb, means, color=[WCOL[n] for n in NAMES], height=0.62)
+    ax_bar.axvline(7.5, color="grey", ls="--", lw=0.7)
+    ax_bar.set_yticks(yb)
+    ax_bar.set_yticklabels(NAMES, fontsize=9)
+    ax_bar.set_xlim(0, 15.8)
+    ax_bar.set_xticks([0, 5, 10, 15])
+    ax_bar.set_xlabel("mean w (2nd half)", fontsize=9)
+    ax_bar.set_title("learned weights", fontsize=10)
+    for y, v in zip(yb, means):
+        ax_bar.text(v + 0.4, y, f"{v:.1f}", va="center", fontsize=9, fontweight="bold")
+
     os.makedirs(FIG_DIR, exist_ok=True)
     out = os.path.join(FIG_DIR, "03_learning.png")
     fig.savefig(out, dpi=120, bbox_inches="tight")
-
-    half = N_ITER * T_PHASE
-    print(f"2nd-half mean weights:  W1={time_avg(0, half):.1f}  W2={time_avg(1, half):.1f}  "
-          f"W3={time_avg(2, half):.1f}  (start {W0})  "
-          f"-> W1 high, W3 low, W2 intermediate")
+    print(f"2nd-half mean weights:  W1={means[0]:.1f}  W2={means[1]:.1f}  W3={means[2]:.1f}  "
+          f"(start {W0})  -> W1 high, W3 low, W2 intermediate")
     print("saved", out)
 
 
