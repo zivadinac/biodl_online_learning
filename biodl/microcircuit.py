@@ -42,18 +42,21 @@ PORT = {
 # is set by the product w*Ibias (n_bit only clips the max weight, it does not
 # rescale). Every static edge uses w=7 (full 3-bit) and tunes strength via Ibias.
 DEFAULT_WEIGHTS = {
-    "input_pyr": (7, 4300),   # bottom-up input -> PYR basal (NMDA, plastic in C -> 4-bit)
-    "input_pv": (7, 2150),    # bottom-up input -> PV
+    "input_pyr": (
+        7,
+        4300,
+    ),  # bottom-up input -> PYR basal (NMDA, plastic in C -> 4-bit)
+    "input_pv": (7, 2150),  # bottom-up input -> PV
     "teacher_pyr": (7, 8600),  # top-down teacher -> PYR apical (AMPA), drives the
     #                            rectified apical (see params.NEGATE / Iapical_low)
-    "cue_vip": (7, 4300),     # attention cue -> VIP
-    "pyr_pv": (7, 2600),      # PYR -> PV
-    "pyr_sst": (7, 2600),     # PYR -> SST
-    "pv_pyr": (7, 2150),      # PV -| PYR (GABA_A on basal)
-    "sst_pyr": (7, 3400),     # SST -| PYR apical (the gate, GABA_B)
-    "vip_sst": (7, 5400),     # VIP -| SST (disinhibition, GABA_B)
-    "pyr_pyr": (6, 1000),     # recurrent excitation (size>=2)
-    "pv_pv": (6, 1000),       # recurrent inhibition (size>=2)
+    "cue_vip": (7, 4300),  # attention cue -> VIP
+    "pyr_pv": (7, 2600),  # PYR -> PV
+    "pyr_sst": (7, 2600),  # PYR -> SST
+    "pv_pyr": (7, 2150),  # PV -| PYR (GABA_A on basal)
+    "sst_pyr": (7, 3400),  # SST -| PYR apical (the gate, GABA_B)
+    "vip_sst": (7, 5400),  # VIP -| SST (disinhibition, GABA_B)
+    "pyr_pyr": (6, 1000),  # recurrent excitation (size>=2)
+    "pv_pv": (6, 1000),  # recurrent inhibition (size>=2)
 }
 
 # Canonical-motif edges, the single source of truth for both the builder and the
@@ -84,7 +87,14 @@ DRIVE_EDGES = [
 _STATIC = "biodl_static_syn"
 _PLASTIC = "biodl_plastic_syn"
 
-DEFAULT_RECORD = ["Isoma_mem", "Isoma_ca", "Iapical", "Ibasal", "sigma_plus", "sigma_minus"]
+DEFAULT_RECORD = [
+    "Isoma_mem",
+    "Isoma_ca",
+    "Iapical",
+    "Ibasal",
+    "sigma_plus",
+    "sigma_minus",
+]
 
 
 class Microcircuit:
@@ -98,12 +108,14 @@ class Microcircuit:
         n_vip: int = 1,
         weights: dict | None = None,
         plastic_input: bool = False,
+        pyr_params: dict | None = None,
     ):
         self.sizes = {"pyr": n_pyr, "pv": n_pv, "sst": n_sst, "vip": n_vip}
         self.weights = dict(DEFAULT_WEIGHTS)
         if weights:
             self.weights.update(weights)
         self.plastic_input = plastic_input
+        self.pyr_params = pyr_params or {}
         self.delay = float(synapse_config().get("delay", 1.0))
         self.pop: dict = {}
         self.gen: dict = {}
@@ -125,8 +137,14 @@ class Microcircuit:
             nest.CopyModel(
                 SYNAPSE_MODEL,
                 _STATIC,
-                {"plastic": False, "binarize": True, "n_bit": 3,  # static synapses: 3-bit
-                 "eta": 0.0, "eta_L": 0.0, "delay": self.delay},
+                {
+                    "plastic": False,
+                    "binarize": True,
+                    "n_bit": 3,  # static synapses: 3-bit
+                    "eta": 0.0,
+                    "eta_L": 0.0,
+                    "delay": self.delay,
+                },
             )
         if _PLASTIC not in existing:
             syn = synapse_config()
@@ -145,8 +163,13 @@ class Microcircuit:
 
     def _create_populations(self) -> None:
         for key, n in self.sizes.items():
+            if n <= 0:  # absent population (e.g. a bare-PYR classifier column)
+                continue
             pop = nest.Create(NEURON_MODEL, n)
-            pop.set(neuron_params(_CFG_TYPE[key]))
+            params = neuron_params(_CFG_TYPE[key])
+            if key == "pyr":
+                params.update(self.pyr_params)
+            pop.set(params)
             self.pop[key] = pop
         self.rt = self.pop["pyr"][0].get("receptor_types")
 
@@ -160,15 +183,18 @@ class Microcircuit:
         }
 
     def _connect_pop(self, src: str, tgt: str, edge: str, receptor: str) -> None:
-        nest.Connect(self.pop[src], self.pop[tgt], "all_to_all", self._syn(edge, receptor))
+        nest.Connect(
+            self.pop[src], self.pop[tgt], "all_to_all", self._syn(edge, receptor)
+        )
 
     def _connect_populations(self) -> None:
-        # inter-population motif
+        # inter-population motif (skip edges touching an absent population)
         for src, dst, edge, receptor, _sign in MOTIF_EDGES:
-            self._connect_pop(src, dst, edge, receptor)
+            if src in self.pop and dst in self.pop:
+                self._connect_pop(src, dst, edge, receptor)
         # recurrent, no autapses (only present at population size >= 2)
         for src, dst, edge, receptor, _sign in RECURRENT_EDGES:
-            if self.sizes[src] >= 2:
+            if src in self.pop and self.sizes[src] >= 2:
                 nest.Connect(
                     self.pop[src],
                     self.pop[dst],
@@ -181,12 +207,18 @@ class Microcircuit:
         self, input_rate: float = 0.0, teacher_rate: float = 0.0, cue_rate: float = 0.0
     ) -> "Microcircuit":
         """Attach the three external drives as *constant-rate* Poisson processes."""
-        for name, rate in (("input", input_rate), ("teacher", teacher_rate), ("cue", cue_rate)):
+        for name, rate in (
+            ("input", input_rate),
+            ("teacher", teacher_rate),
+            ("cue", cue_rate),
+        ):
             self.gen[name] = nest.Create("poisson_generator", 1, {"rate": float(rate)})
         self._connect_drives()
         return self
 
-    def drive_profiles(self, times, input=None, teacher=None, cue=None) -> "Microcircuit":
+    def drive_profiles(
+        self, times, input=None, teacher=None, cue=None
+    ) -> "Microcircuit":
         """Attach the three drives as *time-varying* Poisson processes.
 
         ``times`` is a 1-D vector of times (ms) at which each rate takes effect
@@ -204,7 +236,9 @@ class Microcircuit:
         self._connect_drives()
         return self
 
-    def _poisson_from_profile(self, times: np.ndarray, profile) -> "nest.NodeCollection":
+    def _poisson_from_profile(
+        self, times: np.ndarray, profile
+    ) -> "nest.NodeCollection":
         if profile is None:
             return nest.Create("poisson_generator", 1, {"rate": 0.0})
         if callable(profile):
@@ -226,15 +260,23 @@ class Microcircuit:
             if rt[i] <= rt[i - 1]:
                 rt[i] = rt[i - 1] + res
         return nest.Create(
-            "inhomogeneous_poisson_generator", 1,
+            "inhomogeneous_poisson_generator",
+            1,
             {"rate_times": rt.tolist(), "rate_values": values.tolist()},
         )
 
     def _connect_drives(self) -> None:
         for src, dst, edge, receptor, _sign in DRIVE_EDGES:
-            model = _PLASTIC if (edge == "input_pyr" and self.plastic_input) else _STATIC
+            if dst not in self.pop:
+                continue
+            model = (
+                _PLASTIC if (edge == "input_pyr" and self.plastic_input) else _STATIC
+            )
             nest.Connect(
-                self.gen[src], self.pop[dst], "all_to_all", self._syn(edge, receptor, model=model)
+                self.gen[src],
+                self.pop[dst],
+                "all_to_all",
+                self._syn(edge, receptor, model=model),
             )
 
     def tonic(self, w: int = 7, ibias: float = 2600.0, **rates) -> "Microcircuit":
@@ -250,9 +292,15 @@ class Microcircuit:
             g = nest.Create("poisson_generator", 1, {"rate": float(rate)})
             self.gen[f"tonic_{key}"] = g
             nest.Connect(
-                g, self.pop[key], "all_to_all",
-                {"synapse_model": _STATIC, "receptor_type": int(self.rt[PORT["ampa_basal"]]),
-                 "w": int(w), "Ibias": float(ibias)},
+                g,
+                self.pop[key],
+                "all_to_all",
+                {
+                    "synapse_model": _STATIC,
+                    "receptor_type": int(self.rt[PORT["ampa_basal"]]),
+                    "w": int(w),
+                    "Ibias": float(ibias),
+                },
             )
         return self
 
