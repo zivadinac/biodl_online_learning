@@ -24,7 +24,9 @@ def _module_so() -> str:
     repo = os.path.dirname(here)
     candidates = [
         os.path.join(nest_dir, "lib", "nest", f"{MODULE}.so"),
-        os.path.join(repo, "..", "dynaple-model-nest", "neuron_model", "target", f"{MODULE}.so"),
+        os.path.join(
+            repo, "..", "dynaple-model-nest", "neuron_model", "target", f"{MODULE}.so"
+        ),
     ]
     for c in candidates:
         if os.path.isfile(c):
@@ -35,10 +37,14 @@ def _module_so() -> str:
 
 
 def install_dynaple() -> None:
-    """Install the Dynap-LE module into the running kernel. Idempotent."""
+    """Install the Dynap-LE module into the running kernel. Idempotent and safe to
+    call after other elements exist (NEST forbids ``Install`` once nodes/models are
+    created, so skip when the model is already registered)."""
     nest.build_info["prefix"] = os.path.dirname(nest.__file__)
+    if NEURON_MODEL in nest.Models():
+        return
     try:
         nest.Install(_module_so())
     except Exception as exc:  # noqa: BLE001 - NEST raises if already loaded
-        if "loaded already" not in str(exc) and "already" not in str(exc).lower():
+        if "already" not in str(exc).lower():
             raise
