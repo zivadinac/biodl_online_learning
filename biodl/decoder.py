@@ -1,0 +1,83 @@
+"""A scikit-learn-style EMG gesture classifier backed by the neuromorphic
+two-column spiking network (``biodl.network.ClassifierNetwork``).
+
+Wraps the spiking classifier behind the same ``fit`` / ``predict`` /
+``predict_proba`` / ``score`` interface a MyoGestic model uses, so it drops into
+the galvani pipeline like any sklearn model. Binary gestures only (e.g. rest vs
+fist): **class 0 → column A, class 1 → column B**.
+
+Each EMG feature window (one value per channel, e.g. RMS) is encoded to the
+network's binary input by activating its most-active channels (top
+``active_frac``). Two gestures that recruit different channel sets therefore
+produce different input patterns, and the three-factor delta rule learns to make
+the corresponding column fire faster. Inference is the same patterns with the
+teacher off (weights frozen); the predicted class is the faster-firing column.
+
+Requires NEST + the compiled dynaple module (the workshop venv).
+"""
+
+from __future__ import annotations
+
+import numpy as np
+
+from biodl.network import ClassifierNetwork, Fig2Config
+from biodl.sim import reset
+
+
+class NeuromorphicClassifier:
+    """Two-column spiking classifier with an sklearn-style API (binary)."""
+
+    classes_ = np.array([0, 1])
+
+    def __init__(self, n_features: int, n_pyr: int = 4, epochs: int = 6,
+                 active_frac: float = 0.5, t_present: float = 600.0,
+                 t_infer: float = 400.0, seed: int = 1):
+        self.n_features = int(n_features)
+        self.n_pyr = int(n_pyr)
+        self.epochs = int(epochs)
+        self.active_frac = float(active_frac)
+        self.t_present = float(t_present)
+        self.t_infer = float(t_infer)
+        self.seed = int(seed)
+        self.net: ClassifierNetwork | None = None
+
+    # -- encoding -----------------------------------------------------------
+    def _encode(self, x) -> list[int]:
+        """Feature window -> indices of the most-active channels (the pattern)."""
+        x = np.asarray(x, dtype=float)
+        k = max(1, int(round(self.active_frac * len(x))))
+        return np.argsort(x)[-k:].tolist()
+
+    # -- sklearn API --------------------------------------------------------
+    def fit(self, X, y) -> "NeuromorphicClassifier":
+        X = np.asarray(X, dtype=float)
+        y = np.asarray(y, dtype=int)
+        if not set(np.unique(y)) <= {0, 1}:
+            raise ValueError("NeuromorphicClassifier is binary: labels must be 0 (rest) / 1 (fist)")
+        reset(seed=self.seed)
+        self.net = (ClassifierNetwork(Fig2Config(n_input=self.n_features, n_pyr=self.n_pyr,
+                                                 seed=self.seed))
+                    .build()
+                    .randomize_input_weights(seed=self.seed))
+        for _ in range(self.epochs):
+            for x, label in zip(X, y):
+                self.net.present(self._encode(x), "A" if label == 0 else "B", self.t_present)
+        return self
+
+    def predict_proba(self, X) -> np.ndarray:
+        X = np.atleast_2d(np.asarray(X, dtype=float))
+        out = []
+        for x in X:
+            r = self.net.infer_rates(self._encode(x), self.t_infer)
+            a, b = r["A"], r["B"]
+            tot = a + b
+            out.append([0.5, 0.5] if tot == 0 else [a / tot, b / tot])
+        return np.asarray(out)
+
+    def predict(self, X) -> np.ndarray:
+        proba = self.predict_proba(X)
+        # tie -> class 0 (rest / column A), matching ClassifierNetwork.predict ("A if A>=B")
+        return (proba[:, 1] > proba[:, 0]).astype(int)
+
+    def score(self, X, y) -> float:
+        return float(np.mean(self.predict(X) == np.asarray(y, dtype=int)))
