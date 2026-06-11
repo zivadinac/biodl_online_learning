@@ -1,0 +1,8 @@
+#synapse_name: "delta_syn__with_alive_neur"
+
+delay  : 1   # ms Synaptic transmission delay
+eta    : 0.00000000005 #0.00001 # learning rate
+eta_L  : 0.0005 # learning rate
+Vdd    : 1. #0.5
+
+binarize: True # use binary rapresentation of the synaptic weight

@@ -1,0 +1,41 @@
+## Neuron parameters. Not all needs to be provedied, the default will be used instead.
+
+
+all:
+  # Refractory period
+  t_ref: 1  # (ms) Duration of refractory period (positive)
+            # default: 5 ms
+  # Calcium current constants (k-expressed constants will be multiplied by I0)
+  Csoma_ca    : 4        # (pF) calcium current capacitance
+  Isoma_ca_tau : 6.15        # Leakage current for Ca
+  Isoma_ca_w   : 70 #50.     # CA jump height, on post
+
+  k_ca_th_L_plus : 7000 #5000 #800 #1200 #1500 #1900 #3500  
+  k_ca_th_H_plus : 8000 #5800 #900 #1000 #1400 #1800 #2500  
+  
+  k_ca_th_L_minus: 6000 #4500 #700 #1000 #800 #1000
+  k_ca_th_H_minus: 8000 #5800 #900 #1000 #1200 #1800 
+
+pyr:
+ Isoma_dpi_tau: 2.77
+ Isoma_th: 1000 #pA
+ t_ref: 2.546 #ms
+ alpha_soma: 5
+ Iapical_low: -1000 #-5000 #-100000 #-5000
+ Inmda_basal_thr: 0
+sst:
+ Isoma_dpi_tau: 2.46
+ Isoma_th: 1100 #pA
+ t_ref: 1.5 #ms
+ alpha_soma: 5
+pvc:
+ Isoma_dpi_tau: 9.39
+ Isoma_th: 1200 #pA
+ t_ref: 1.5 #ms
+ alpha_soma: 5
+vip:
+ Isoma_dpi_tau: 2.67
+ Isoma_th: 1100 #pA
+ t_ref: 1.5 #ms
+ alpha_soma: 5
+
