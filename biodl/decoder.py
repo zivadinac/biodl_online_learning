@@ -169,6 +169,7 @@ class NeuromorphicClassifier:
         self.rate_active = float(rate_active)
         self._rate_scale: float | None = None
         self._fitted = False
+        self.last_rates = (0.0, 0.0)  # raw PYR firing rates (Hz) of the last predict: (rest_A, fist_B)
 
     # -- encoding (pure numpy, client-side) ---------------------------------
     def _encode(self, x) -> list[int]:
@@ -246,6 +247,7 @@ class NeuromorphicClassifier:
         out = []
         for x in X:
             a, b = worker.request("predict", self._drive(x), self.t_infer)
+            self.last_rates = (float(a), float(b))  # PYR discharge rates (Hz): rest col A, fist col B
             tot = a + b
             out.append([0.5, 0.5] if tot == 0 else [a / tot, b / tot])
         return np.asarray(out)
