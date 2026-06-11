@@ -26,9 +26,9 @@ import numpy as np  # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from biodl.decoder import NeuromorphicClassifier  # noqa: E402
 
-N_CH = 16
-REST_CH = np.arange(0, 10)
-FIST_CH = np.arange(6, 16)
+N_CH = 8  # Galvani bracelet has 8 EMG channels
+REST_CH = np.arange(0, 5)
+FIST_CH = np.arange(3, 8)
 FIG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "figures")
 
 
@@ -52,7 +52,7 @@ def main():
     Xtr, ytr = synthetic_emg(n_per_class=8, seed=1)
     Xte, yte = synthetic_emg(n_per_class=6, seed=99)
 
-    clf = NeuromorphicClassifier(n_features=N_CH, n_pyr=4, epochs=6, active_frac=0.5)
+    clf = NeuromorphicClassifier(n_features=N_CH, n_pyr=4, epochs=6, active_frac=0.5, encode="rate")
     print("training neuromorphic decoder on rest vs fist ...")
     clf.fit(Xtr, ytr)
     pred = clf.predict(Xte)
@@ -67,8 +67,8 @@ def main():
     ch = np.arange(N_CH)
     ax_emg.bar(ch - 0.2, rest_mean, 0.4, color="#2874A6", label="rest")
     ax_emg.bar(ch + 0.2, fist_mean, 0.4, color="#C0392B", label="fist")
-    ax_emg.axvspan(5.5, 9.5, color="grey", alpha=0.12)
-    ax_emg.text(7.5, ax_emg.get_ylim()[1] * 0.95, "overlap", ha="center", fontsize=8, color="#555")
+    ax_emg.axvspan(2.5, 4.5, color="grey", alpha=0.12)
+    ax_emg.text(3.5, ax_emg.get_ylim()[1] * 0.95, "overlap", ha="center", fontsize=8, color="#555")
     ax_emg.set_xlabel("EMG channel")
     ax_emg.set_ylabel("mean RMS feature")
     ax_emg.set_title("Synthetic EMG: rest vs fist channel activation")

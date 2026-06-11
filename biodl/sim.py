@@ -30,7 +30,10 @@ from biodl.nest_setup import install_dynaple
 
 
 def reset(
-    resolution: float = 0.1, seed: int | None = None, verbosity: str = "M_ERROR"
+    resolution: float = 0.1,
+    seed: int | None = None,
+    verbosity: str = "M_ERROR",
+    local_num_threads: int = 1,
 ) -> None:
     """Reset + configure the NEST kernel and install the dynaple module.
 
@@ -41,7 +44,10 @@ def reset(
     """
     nest.set_verbosity(verbosity)
     nest.ResetKernel()
-    status: dict = {"resolution": float(resolution)}
+    status: dict = {
+        "resolution": float(resolution),
+        "local_num_threads": int(local_num_threads),
+    }
     if seed is not None:
         status["rng_seed"] = int(seed)
     nest.SetKernelStatus(status)

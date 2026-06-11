@@ -203,6 +203,38 @@ class ClassifierNetwork:
             conns.set([{"w": int(v)} for v in rng.integers(0, 16, size=len(conns))])
         return self
 
+    def set_input_weight_templates(
+        self, templates: dict[str, np.ndarray], max_w: float = 15.0
+    ) -> "ClassifierNetwork":
+        """Set input->PYR weights from per-column rate templates.
+
+        ``templates`` maps column names (``"A"``/``"B"``) to one rate value per
+        input channel. The largest rate in each template maps to ``max_w`` and
+        zero-rate channels map to zero. The same input-channel weight is applied
+        to every PYR neuron in that column.
+        """
+        for name, template in templates.items():
+            if name not in self.COLUMNS:
+                raise ValueError(f"unknown column {name!r}")
+            rates = np.asarray(template, dtype=float)
+            if rates.shape != (self.cfg.n_input,):
+                raise ValueError(f"template for {name} must have length {self.cfg.n_input}")
+            peak = float(np.max(rates)) if rates.size else 0.0
+            weights = np.zeros_like(rates) if peak <= 0.0 else (rates / peak) * float(max_w)
+            weights = np.clip(weights, 0.0, float(max_w))
+
+            conns = self._column_plastic_connections(name)
+            sources = np.asarray(conns.get("source"), dtype=int)
+            input_ids = sorted(set(sources.tolist()))
+            if len(input_ids) != self.cfg.n_input:
+                raise RuntimeError(
+                    f"expected {self.cfg.n_input} input sources for {name}, got {len(input_ids)}"
+                )
+            source_weight = {src: float(weights[i]) for i, src in enumerate(input_ids)}
+            conns.set([{"w": source_weight[int(src)]} for src in sources])
+            self.plastic_conn[name] = conns
+        return self
+
     def _inject_mismatch(self) -> None:
         """Multiplicative lognormal mismatch (CV=self.mismatch) on per-neuron
         threshold/refractory/time-constants and per-synapse bias current."""
