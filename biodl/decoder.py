@@ -29,9 +29,9 @@ class NeuromorphicClassifier:
 
     classes_ = np.array([0, 1])
 
-    def __init__(self, n_features: int, n_pyr: int = 4, epochs: int = 6,
-                 active_frac: float = 0.5, t_present: float = 600.0,
-                 t_infer: float = 400.0, seed: int = 1):
+    def __init__(self, n_features: int, n_pyr: int = 4, epochs: int = 5,
+                 active_frac: float = 0.5, t_present: float = 300.0,
+                 t_infer: float = 200.0, seed: int = 1):
         self.n_features = int(n_features)
         self.n_pyr = int(n_pyr)
         self.epochs = int(epochs)
@@ -59,9 +59,15 @@ class NeuromorphicClassifier:
                                                  seed=self.seed))
                     .build()
                     .randomize_input_weights(seed=self.seed))
+        # Train on each class's *canonical* pattern (the mean feature window),
+        # not every recorded window: with NEST in a real-time GUI thread, looping
+        # all windows x epochs hangs the UI. The class-defining channels dominate
+        # the mean, so the canonical pattern generalises to noisy test windows.
+        patterns = {int(c): self._encode(X[y == c].mean(axis=0))
+                    for c in (0, 1) if (y == c).any()}
         for _ in range(self.epochs):
-            for x, label in zip(X, y):
-                self.net.present(self._encode(x), "A" if label == 0 else "B", self.t_present)
+            for label, active in patterns.items():
+                self.net.present(active, "A" if label == 0 else "B", self.t_present)
         return self
 
     def predict_proba(self, X) -> np.ndarray:
