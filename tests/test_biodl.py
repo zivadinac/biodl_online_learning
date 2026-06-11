@@ -100,6 +100,53 @@ def test_network_matches_edge_data():
     assert actual == expected, f"wired {sorted(actual)} != declared {sorted(expected)}"
 
 
+# -- unification: bare columns vs motif (needs NEST) ------------------------
+def test_bare_column_has_no_recurrence():
+    """Codex regression: a bare classifier column (connect_recurrent=False) must
+    have ZERO recurrent PYR->PYR synapses -- they explode Ibasal and invert the
+    learning sign. A normal motif column (n_pyr>=2) must still wire them."""
+    import nest
+
+    from biodl.microcircuit import Microcircuit
+    from biodl.sim import reset
+
+    reset(seed=1)
+    bare = Microcircuit(n_pyr=4, n_pv=0, n_sst=0, n_vip=0, connect_recurrent=False).build()
+    pyr_ids = set(bare.pop["pyr"].tolist())
+    rec = [c for c in nest.GetConnections() if c.source in pyr_ids and c.target in pyr_ids]
+    assert len(rec) == 0, f"bare column must have 0 PYR->PYR, got {len(rec)}"
+
+    reset(seed=1)
+    motif = Microcircuit(n_pyr=2, n_pv=1, n_sst=1, n_vip=1).build()
+    mids = set(motif.pop["pyr"].tolist())
+    rec2 = [c for c in nest.GetConnections() if c.source in mids and c.target in mids]
+    assert len(rec2) > 0, "n_pyr=2 motif column should wire recurrent PYR->PYR"
+
+
+def test_classifier_learns_and_freezes():
+    """The composed ClassifierNetwork learns class-specific weights and keeps them
+    frozen through inference."""
+    import numpy as np
+
+    from biodl.network import ClassifierNetwork, Fig2Config
+    from biodl.sim import reset
+
+    reset(seed=1)
+    net = ClassifierNetwork(Fig2Config(n_input=16, n_pyr=4)).build().randomize_input_weights(seed=1)
+    pat_a, pat_b = list(range(0, 10)), list(range(6, 16))
+    for _ in range(6):
+        net.present(pat_a, "A", 800.0)
+        net.present(pat_b, "B", 800.0)
+    wa = net.weight_matrix("A").mean(axis=1)
+    assert wa[0:6].mean() > wa[10:16].mean(), "col A must weight A-only inputs above B-only"
+
+    before = net.weight_matrix("A").copy()
+    net.predict(pat_a, 300.0)
+    after = net.weight_matrix("A")
+    assert float(np.abs(before - after).max()) == 0.0, "weights must be frozen during inference"
+
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items())
              if k.startswith("test_") and callable(v)]
