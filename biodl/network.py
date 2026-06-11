@@ -191,8 +191,9 @@ class ClassifierNetwork:
         )
 
     def _set_input_plasticity(self, enabled: bool) -> None:
+        # use the cached connection handle (GetConnections per predict is slow)
         for name in self.COLUMNS:
-            self._column_plastic_connections(name).set({"plastic": bool(enabled)})
+            self.plastic_conn[name].set({"plastic": bool(enabled)})
 
     def randomize_input_weights(self, seed: int | None = None) -> "ClassifierNetwork":
         """Random 4-bit initial weights on the plastic input synapses."""
