@@ -18,7 +18,6 @@ The worker needs NEST + the compiled dynaple module + ``biodl`` on its path.
 
 from __future__ import annotations
 
-import multiprocessing as mp
 import sys
 import threading
 
@@ -39,8 +38,7 @@ _EPS = 1e-12
 #   ("stop",)                   -> ("ok", None) then exit
 # Errors come back as ("error", traceback_str).
 # ---------------------------------------------------------------------------
-def _worker_main(conn, syspath) -> None:  # pragma: no cover - separate process
-    sys.path[:0] = [p for p in syspath if p not in sys.path]
+def _worker_serve(conn) -> None:  # pragma: no cover - separate process
     import nest
 
     nest.set_verbosity("M_ERROR")
@@ -94,19 +92,35 @@ def _worker_main(conn, syspath) -> None:  # pragma: no cover - separate process
 
 
 class _NestWorker:
-    """Client handle to the NEST subprocess; serialises requests (one kernel)."""
+    """Client handle to the NEST subprocess; serialises requests (one kernel).
+
+    The worker is a plain ``python -m biodl._worker_entry`` subprocess that
+    connects back over a localhost socket -- NOT a multiprocessing spawn target.
+    That matters: spawn re-imports the parent's ``__main__``, which would re-run
+    an example's module-level GUI/bracelet/LSL setup in the child and break it.
+    """
 
     def __init__(self):
-        ctx = mp.get_context("spawn")
-        self.conn, child = ctx.Pipe()
-        self.proc = ctx.Process(target=_worker_main, args=(child, list(sys.path)),
-                                daemon=True)
-        self.proc.start()
+        import os
+        import subprocess
+        from multiprocessing.connection import Listener
+
+        authkey = os.urandom(16)
+        self._listener = Listener(("127.0.0.1", 0), authkey=authkey)
+        host, port = self._listener.address
+        env = os.environ.copy()
+        env["BIODL_WORKER_ADDR"] = f"{host}:{port}"
+        env["BIODL_WORKER_AUTHKEY"] = authkey.decode("latin1")
+        # make biodl importable in the child (for `-m` and its own imports)
+        pp = os.pathsep.join(p for p in sys.path if p)
+        env["PYTHONPATH"] = pp + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+        self.proc = subprocess.Popen([sys.executable, "-m", "biodl._worker_entry"], env=env)
+        self.conn = self._listener.accept()  # blocks until the worker connects
         self._lock = threading.Lock()
 
     def request(self, *msg):
         with self._lock:
-            if not self.proc.is_alive():
+            if self.proc.poll() is not None:
                 raise RuntimeError("NEST worker process is not running")
             self.conn.send(msg)
             status, payload = self.conn.recv()
@@ -115,7 +129,7 @@ class _NestWorker:
         return payload
 
     def alive(self) -> bool:
-        return self.proc.is_alive()
+        return self.proc.poll() is None
 
 
 # One persistent worker for the whole process: the NEST kernel is single and
