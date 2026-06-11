@@ -20,8 +20,16 @@ from __future__ import annotations
 
 import numpy as np
 
+import threading
+
 from biodl.network import ClassifierNetwork, Fig2Config
 from biodl.sim import reset
+
+# The NEST kernel is global, single, and not thread-safe. MyoGestic runs
+# train() on a background thread and predict on a daemon thread, so ALL NEST
+# access (across every classifier instance) must be serialised, or a train
+# ResetKernel races a predict Simulate -> hang/crash.
+_NEST_LOCK = threading.RLock()
 
 
 class NeuromorphicClassifier:
@@ -67,30 +75,32 @@ class NeuromorphicClassifier:
         y = np.asarray(y, dtype=int)
         if not set(np.unique(y)) <= {0, 1}:
             raise ValueError("NeuromorphicClassifier is binary: labels must be 0 (rest) / 1 (fist)")
-        reset(seed=self.seed)
-        self.net = (ClassifierNetwork(Fig2Config(n_input=self.n_features, n_pyr=self.n_pyr,
-                                                 seed=self.seed))
-                    .build()
-                    .randomize_input_weights(seed=self.seed))
-        # Train on each class's *canonical* pattern (the mean feature window),
-        # not every recorded window: with NEST in a real-time GUI thread, looping
-        # all windows x epochs hangs the UI. The class-defining channels dominate
-        # the mean, so the canonical pattern generalises to noisy test windows.
-        drives = {int(c): self._drive(X[y == c].mean(axis=0))
-                  for c in (0, 1) if (y == c).any()}
-        for _ in range(self.epochs):
-            for label, drive in drives.items():
-                self.net.present(teacher="A" if label == 0 else "B", t=self.t_present, **drive)
+        with _NEST_LOCK:
+            reset(seed=self.seed)
+            self.net = (ClassifierNetwork(Fig2Config(n_input=self.n_features, n_pyr=self.n_pyr,
+                                                     seed=self.seed))
+                        .build()
+                        .randomize_input_weights(seed=self.seed))
+            # Train on each class's canonical pattern (the mean feature window),
+            # not every recorded window: looping all windows x epochs is too slow
+            # for the GUI. The class-defining channels dominate the mean.
+            drives = {int(c): self._drive(X[y == c].mean(axis=0))
+                      for c in (0, 1) if (y == c).any()}
+            for _ in range(self.epochs):
+                for label, drive in drives.items():
+                    self.net.present(teacher="A" if label == 0 else "B",
+                                     t=self.t_present, **drive)
         return self
 
     def predict_proba(self, X) -> np.ndarray:
         X = np.atleast_2d(np.asarray(X, dtype=float))
         out = []
-        for x in X:
-            r = self.net.infer_rates(t=self.t_infer, **self._drive(x))
-            a, b = r["A"], r["B"]
-            tot = a + b
-            out.append([0.5, 0.5] if tot == 0 else [a / tot, b / tot])
+        with _NEST_LOCK:
+            for x in X:
+                r = self.net.infer_rates(t=self.t_infer, **self._drive(x))
+                a, b = r["A"], r["B"]
+                tot = a + b
+                out.append([0.5, 0.5] if tot == 0 else [a / tot, b / tot])
         return np.asarray(out)
 
     def predict(self, X) -> np.ndarray:
