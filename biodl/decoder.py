@@ -31,7 +31,8 @@ class NeuromorphicClassifier:
 
     def __init__(self, n_features: int, n_pyr: int = 4, epochs: int = 5,
                  active_frac: float = 0.5, t_present: float = 300.0,
-                 t_infer: float = 200.0, seed: int = 1):
+                 t_infer: float = 200.0, seed: int = 1,
+                 encode: str = "topk", rate_active: float = 50.0):
         self.n_features = int(n_features)
         self.n_pyr = int(n_pyr)
         self.epochs = int(epochs)
@@ -39,6 +40,8 @@ class NeuromorphicClassifier:
         self.t_present = float(t_present)
         self.t_infer = float(t_infer)
         self.seed = int(seed)
+        self.encode = encode  # "topk" (binary) or "rate" (amplitude rate-coding)
+        self.rate_active = float(rate_active)
         self.net: ClassifierNetwork | None = None
 
     # -- encoding -----------------------------------------------------------
@@ -47,6 +50,16 @@ class NeuromorphicClassifier:
         x = np.asarray(x, dtype=float)
         k = max(1, int(round(self.active_frac * len(x))))
         return np.argsort(x)[-k:].tolist()
+
+    def _encode_rates(self, x) -> np.ndarray:
+        """Amplitude rate-coding: each channel -> Poisson rate (Hz) proportional
+        to its feature (normalised to the strongest channel)."""
+        x = np.clip(np.asarray(x, dtype=float), 0.0, None)
+        mx = x.max()
+        return (x / mx) * self.rate_active if mx > 0 else np.zeros_like(x)
+
+    def _drive(self, x) -> dict:
+        return {"rates": self._encode_rates(x)} if self.encode == "rate" else {"active": self._encode(x)}
 
     # -- sklearn API --------------------------------------------------------
     def fit(self, X, y) -> "NeuromorphicClassifier":
@@ -63,18 +76,18 @@ class NeuromorphicClassifier:
         # not every recorded window: with NEST in a real-time GUI thread, looping
         # all windows x epochs hangs the UI. The class-defining channels dominate
         # the mean, so the canonical pattern generalises to noisy test windows.
-        patterns = {int(c): self._encode(X[y == c].mean(axis=0))
-                    for c in (0, 1) if (y == c).any()}
+        drives = {int(c): self._drive(X[y == c].mean(axis=0))
+                  for c in (0, 1) if (y == c).any()}
         for _ in range(self.epochs):
-            for label, active in patterns.items():
-                self.net.present(active, "A" if label == 0 else "B", self.t_present)
+            for label, drive in drives.items():
+                self.net.present(teacher="A" if label == 0 else "B", t=self.t_present, **drive)
         return self
 
     def predict_proba(self, X) -> np.ndarray:
         X = np.atleast_2d(np.asarray(X, dtype=float))
         out = []
         for x in X:
-            r = self.net.infer_rates(self._encode(x), self.t_infer)
+            r = self.net.infer_rates(t=self.t_infer, **self._drive(x))
             a, b = r["A"], r["B"]
             tot = a + b
             out.append([0.5, 0.5] if tot == 0 else [a / tot, b / tot])

@@ -237,6 +237,14 @@ class ClassifierNetwork:
             ]
         )
 
+    def set_rates(self, rates) -> None:
+        """Drive each input channel at an explicit Poisson rate (Hz) -- for
+        amplitude rate-coding instead of the binary set_pattern()."""
+        rates = np.asarray(rates, dtype=float)
+        if rates.shape != (self.cfg.n_input,):
+            raise ValueError(f"rates must have length {self.cfg.n_input}")
+        self.input_gen.set([{"rate": float(r)} for r in rates])
+
     def set_teacher(self, column: str | None) -> None:
         for name in self.COLUMNS:
             self.teacher[name].set(
@@ -246,19 +254,26 @@ class ClassifierNetwork:
     def set_attention(self, on: bool) -> None:
         self.attention.set({"rate": self.cfg.attn_rate if on else 0.0})
 
-    def present(self, active, teacher: str | None, t: float) -> None:
+    def present(self, active=None, teacher: str | None = None, t: float = 600.0,
+                rates=None) -> None:
         """One training presentation: attention ON (gate open), teacher on the
-        matching column."""
-        self.set_pattern(active)
+        matching column. Pass rates= for amplitude rate-coding, else active=."""
+        if rates is not None:
+            self.set_rates(rates)
+        else:
+            self.set_pattern(active)
         self.set_teacher(teacher)
         self.set_attention(True)
         self._set_input_plasticity(True)
         nest.Simulate(t)
 
     # -- readout ----------------------------------------------------------
-    def infer_rates(self, active, t: float | None = None) -> dict[str, float]:
+    def infer_rates(self, active=None, t: float | None = None, rates=None) -> dict[str, float]:
         t = t if t is not None else self.cfg.t_infer
-        self.set_pattern(active)
+        if rates is not None:
+            self.set_rates(rates)
+        else:
+            self.set_pattern(active)
         self.set_teacher(None)
         self.set_attention(False)  # gate closed -> PYR below windows -> weights frozen
         for name in self.COLUMNS:
