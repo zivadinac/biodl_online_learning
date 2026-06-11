@@ -109,6 +109,7 @@ class Microcircuit:
         weights: dict | None = None,
         plastic_input: bool = False,
         pyr_params: dict | None = None,
+        connect_recurrent: bool = True,
     ):
         self.sizes = {"pyr": n_pyr, "pv": n_pv, "sst": n_sst, "vip": n_vip}
         self.weights = dict(DEFAULT_WEIGHTS)
@@ -116,6 +117,7 @@ class Microcircuit:
             self.weights.update(weights)
         self.plastic_input = plastic_input
         self.pyr_params = pyr_params or {}
+        self.connect_recurrent = connect_recurrent
         self.delay = float(synapse_config().get("delay", 1.0))
         self.pop: dict = {}
         self.gen: dict = {}
@@ -194,7 +196,7 @@ class Microcircuit:
                 self._connect_pop(src, dst, edge, receptor)
         # recurrent, no autapses (only present at population size >= 2)
         for src, dst, edge, receptor, _sign in RECURRENT_EDGES:
-            if src in self.pop and self.sizes[src] >= 2:
+            if self.connect_recurrent and src in self.pop and self.sizes[src] >= 2:
                 nest.Connect(
                     self.pop[src],
                     self.pop[dst],

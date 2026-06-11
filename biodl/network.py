@@ -31,8 +31,8 @@ from dataclasses import dataclass, field
 import nest
 import numpy as np
 
-from biodl.nest_setup import NEURON_MODEL, SYNAPSE_MODEL, install_dynaple
-from biodl.params import neuron_params
+from biodl.microcircuit import Microcircuit
+from biodl.nest_setup import SYNAPSE_MODEL, install_dynaple
 
 _PLASTIC = "fig2_plastic_syn"
 _STATIC = "fig2_static_syn"
@@ -106,20 +106,22 @@ class ClassifierNetwork:
                     },
                 )
 
-        # PYR columns (bare; effective_bias + calibrated calcium windows)
         win = {
             "k_ca_th_L_plus": c.ltp_window[0],
             "k_ca_th_H_plus": c.ltp_window[1],
             "k_ca_th_L_minus": c.ltd_window[0],
             "k_ca_th_H_minus": c.ltd_window[1],
         }
+        # bare Microcircuit columns: no PV/SST/VIP (absent) and NO recurrent
+        # PYR->PYR (connect_recurrent=False) -- recurrence explodes Ibasal and
+        # flips the learning sign for these independent classifier columns.
+        pyr_params = {"effective_bias": True, **win}
         for name in self.COLUMNS:
-            pop = nest.Create(NEURON_MODEL, c.n_pyr)
-            p = neuron_params("pyr")
-            p["effective_bias"] = True
-            p.update(win)
-            pop.set(p)
-            self.pyr[name] = pop
+            col = Microcircuit(
+                n_pyr=c.n_pyr, n_pv=0, n_sst=0, n_vip=0,
+                pyr_params=pyr_params, connect_recurrent=False,
+            ).build()
+            self.pyr[name] = col.pop["pyr"]
         self.rt = self.pyr["A"][0].get("receptor_types")
 
         # shared N-dim input -> every PYR of both columns (plastic NMDA)
