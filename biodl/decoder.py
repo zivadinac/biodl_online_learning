@@ -31,7 +31,7 @@ class NeuromorphicClassifier:
 
     def __init__(self, n_features: int, n_pyr: int = 4, epochs: int = 5,
                  active_frac: float = 0.5, t_present: float = 300.0,
-                 t_infer: float = 200.0, seed: int = 1,
+                 t_infer: float = 100.0, seed: int = 1,
                  encode: str = "topk", rate_active: float = 50.0):
         self.n_features = int(n_features)
         self.n_pyr = int(n_pyr)
