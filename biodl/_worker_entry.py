@@ -15,7 +15,7 @@ from multiprocessing.connection import Client
 def main() -> None:
     addr = os.environ["BIODL_WORKER_ADDR"]
     host, port = addr.rsplit(":", 1)
-    authkey = os.environ["BIODL_WORKER_AUTHKEY"].encode("latin1")
+    authkey = bytes.fromhex(os.environ["BIODL_WORKER_AUTHKEY"])
     conn = Client((host, int(port)), authkey=authkey)
 
     from biodl.decoder import _worker_serve

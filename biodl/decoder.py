@@ -110,7 +110,7 @@ class _NestWorker:
         host, port = self._listener.address
         env = os.environ.copy()
         env["BIODL_WORKER_ADDR"] = f"{host}:{port}"
-        env["BIODL_WORKER_AUTHKEY"] = authkey.decode("latin1")
+        env["BIODL_WORKER_AUTHKEY"] = authkey.hex()  # hex -> no NULL bytes in env
         # make biodl importable in the child (for `-m` and its own imports)
         pp = os.pathsep.join(p for p in sys.path if p)
         env["PYTHONPATH"] = pp + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
