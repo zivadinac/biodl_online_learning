@@ -18,6 +18,8 @@ The worker needs NEST + the compiled dynaple module + ``biodl`` on its path.
 
 from __future__ import annotations
 
+import pickle
+import struct
 import sys
 import threading
 
@@ -30,11 +32,47 @@ _RATE_SCALE_PERCENTILE = 75.0
 _EPS = 1e-12
 
 
+class _FdConnection:
+    """Minimal pickle connection over inherited file descriptors."""
+
+    def __init__(self, read_file, write_file):
+        self._read_file = read_file
+        self._write_file = write_file
+
+    def send(self, obj) -> None:
+        data = pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL)
+        self._write_file.write(struct.pack("!Q", len(data)))
+        self._write_file.write(data)
+        self._write_file.flush()
+
+    def recv(self):
+        header = self._read_exact(8)
+        if not header:
+            raise EOFError
+        size = struct.unpack("!Q", header)[0]
+        return pickle.loads(self._read_exact(size))
+
+    def _read_exact(self, size: int) -> bytes:
+        chunks = []
+        remaining = size
+        while remaining:
+            chunk = self._read_file.read(remaining)
+            if not chunk:
+                if chunks:
+                    raise EOFError
+                return b""
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        return b"".join(chunks)
+
+
 # ---------------------------------------------------------------------------
 # NEST worker -- runs in its OWN process (spawned). Imports NEST + biodl there
 # so they never touch the GUI process. Protocol over the pipe:
-#   ("fit", cfg, drives)        -> ("ok", None)
-#   ("predict", drive, t_infer) -> ("ok", (rate_A, rate_B))
+#   ("fit", cfg, drives)                  -> ("ok", None)
+#   ("predict", drive, t_infer)           -> ("ok", (rate_A, rate_B))
+#   ("single_motif_fit", cfg, drives, y)  -> ("ok", train_rates)
+#   ("single_motif_predict", drive, t)    -> ("ok", rate)
 #   ("stop",)                   -> ("ok", None) then exit
 # Errors come back as ("error", traceback_str).
 # ---------------------------------------------------------------------------
@@ -46,6 +84,7 @@ def _worker_serve(conn) -> None:  # pragma: no cover - separate process
     from biodl.sim import reset
 
     net = None
+    single_net = None
     while True:
         try:
             msg = conn.recv()
@@ -63,6 +102,7 @@ def _worker_serve(conn) -> None:  # pragma: no cover - separate process
                     plastic_ibias=cfg["plastic_ibias"],
                 )
                 net = ClassifierNetwork(fig_cfg).build()
+                single_net = None
                 if cfg.get("template_init", False):
                     templates = {
                         "A" if label == 0 else "B": drive["rates"]
@@ -79,8 +119,37 @@ def _worker_serve(conn) -> None:  # pragma: no cover - separate process
                 conn.send(("ok", None))
             elif cmd == "predict":
                 _, drive, t_infer = msg
+                if net is None:
+                    raise RuntimeError("two-column network has not been fitted")
                 r = net.infer_rates(t=t_infer, **drive)
                 conn.send(("ok", (float(r["A"]), float(r["B"]))))
+            elif cmd == "single_motif_fit":
+                _, cfg, drives, labels = msg
+                from biodl.single_motif import SingleMotifConfig, SingleMotifNetwork
+
+                sm_cfg = SingleMotifConfig(**cfg)
+                single_net = SingleMotifNetwork(sm_cfg).build()
+                net = None
+                labels = [int(v) for v in labels]
+                for _ in range(sm_cfg.epochs):
+                    for drive, label in zip(drives, labels):
+                        single_net.present(
+                            teacher_on=(label == 0),
+                            attention=True,
+                            t=sm_cfg.t_train,
+                            **drive,
+                        )
+                train_rates = [
+                    float(single_net.infer_rate(t=sm_cfg.t_infer, **drive))
+                    for drive in drives
+                ]
+                conn.send(("ok", train_rates))
+            elif cmd == "single_motif_predict":
+                _, drive, t_infer = msg
+                if single_net is None:
+                    raise RuntimeError("single-motif network has not been fitted")
+                rate = single_net.infer_rate(t=t_infer, **drive)
+                conn.send(("ok", float(rate)))
             elif cmd == "stop":
                 conn.send(("ok", None))
                 break
@@ -95,27 +164,74 @@ class _NestWorker:
     """Client handle to the NEST subprocess; serialises requests (one kernel).
 
     The worker is a plain ``python -m biodl._worker_entry`` subprocess that
-    connects back over a localhost socket -- NOT a multiprocessing spawn target.
-    That matters: spawn re-imports the parent's ``__main__``, which would re-run
+    connects back over a localhost socket, Unix socket, or inherited pipe --
+    NOT a multiprocessing spawn target. That matters: spawn re-imports the
+    parent's ``__main__``, which would re-run
     an example's module-level GUI/bracelet/LSL setup in the child and break it.
     """
 
     def __init__(self):
         import os
         import subprocess
+        import tempfile
         from multiprocessing.connection import Listener
 
         authkey = os.urandom(16)
-        self._listener = Listener(("127.0.0.1", 0), authkey=authkey)
-        host, port = self._listener.address
         env = os.environ.copy()
-        env["BIODL_WORKER_ADDR"] = f"{host}:{port}"
+        self._socket_path = None
+        self._listener = None
+        try:
+            self._listener = Listener(("127.0.0.1", 0), authkey=authkey)
+            host, port = self._listener.address
+            env["BIODL_WORKER_ADDR"] = f"{host}:{port}"
+        except PermissionError:
+            path = os.path.join(
+                tempfile.gettempdir(),
+                f"biodl-worker-{os.getpid()}-{id(self)}.sock",
+            )
+            try:
+                os.unlink(path)
+            except FileNotFoundError:
+                pass
+            try:
+                self._listener = Listener(path, family="AF_UNIX", authkey=authkey)
+                self._socket_path = path
+                env["BIODL_WORKER_SOCKET"] = path
+            except PermissionError:
+                self._listener = None
+                p2c_r, p2c_w = os.pipe()
+                c2p_r, c2p_w = os.pipe()
+                env["BIODL_WORKER_READ_FD"] = str(p2c_r)
+                env["BIODL_WORKER_WRITE_FD"] = str(c2p_w)
         env["BIODL_WORKER_AUTHKEY"] = authkey.hex()  # hex -> no NULL bytes in env
         # make biodl importable in the child (for `-m` and its own imports)
         pp = os.pathsep.join(p for p in sys.path if p)
-        env["PYTHONPATH"] = pp + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
-        self.proc = subprocess.Popen([sys.executable, "-m", "biodl._worker_entry"], env=env)
-        self.conn = self._listener.accept()  # blocks until the worker connects
+        env["PYTHONPATH"] = pp + (
+            os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else ""
+        )
+
+        if self._listener is None:
+            self.proc = subprocess.Popen(
+                [sys.executable, "-m", "biodl._worker_entry"],
+                env=env,
+                pass_fds=(p2c_r, c2p_w),
+            )
+            os.close(p2c_r)
+            os.close(c2p_w)
+            self.conn = _FdConnection(
+                os.fdopen(c2p_r, "rb", buffering=0),
+                os.fdopen(p2c_w, "wb", buffering=0),
+            )
+        else:
+            self.proc = subprocess.Popen(
+                [sys.executable, "-m", "biodl._worker_entry"], env=env
+            )
+            self.conn = self._listener.accept()  # blocks until the worker connects
+            if self._socket_path is not None:
+                try:
+                    os.unlink(self._socket_path)
+                except FileNotFoundError:
+                    pass
         self._lock = threading.Lock()
 
     def request(self, *msg):
@@ -169,7 +285,7 @@ class NeuromorphicClassifier:
         self.rate_active = float(rate_active)
         self._rate_scale: float | None = None
         self._fitted = False
-        self.last_rates = (0.0, 0.0)  # raw PYR firing rates (Hz) of the last predict: (rest_A, fist_B)
+        self.last_rates = (0.0, 0.0)  # raw PYR firing rates (Hz): (rest_A, fist_B)
 
     # -- encoding (pure numpy, client-side) ---------------------------------
     def _encode(self, x) -> list[int]:
@@ -247,7 +363,7 @@ class NeuromorphicClassifier:
         out = []
         for x in X:
             a, b = worker.request("predict", self._drive(x), self.t_infer)
-            self.last_rates = (float(a), float(b))  # PYR discharge rates (Hz): rest col A, fist col B
+            self.last_rates = (float(a), float(b))
             tot = a + b
             out.append([0.5, 0.5] if tot == 0 else [a / tot, b / tot])
         return np.asarray(out)
